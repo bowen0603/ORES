@@ -5,6 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn import cross_validation as cv
 import numpy as np
+import matplotlib.pyplot as plt
 
 __author__ = 'bobo'
 
@@ -18,6 +19,8 @@ class AccuracyTradeOffs:
         self.data_x = None
         self.data_y_badfaith = None
         self.data_y_damaging = None
+
+        self.file_output = "dataset/plot_data.csv"
 
     def load_data(self):
         reader = FileReader()
@@ -76,6 +79,7 @@ class AccuracyTradeOffs:
                 dict_rates_fp[threshold] += rate_fp
                 dict_rates_fn[threshold] += rate_fn
 
+        f_output = open(self.file_output, 'w')
         print("Threshold, FP rate, FN rates")
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
@@ -85,14 +89,36 @@ class AccuracyTradeOffs:
                                                   dict_rates_fp[threshold],
                                                   dict_rates_fn[threshold]))
 
+            print("{},{:.5f},{:.5f}".format(threshold,
+                                            dict_rates_fp[threshold],
+                                            dict_rates_fn[threshold]), file=f_output)
         # TODO: train label bad faith edits
-        # TODO: generate plots ...
+
+    def plot_charts(self):
+        x = []
+        y = []
+        for line in open(self.file_output, 'r'):
+            threshold, fp, fn = line.strip().split(',')
+            y.append(float(fp))
+            x.append(float(fn))
+
+        # plt.xticks(rotation=90)
+        plt.xticks(np.arange(min(x), max(x) + 0.1, 0.1))
+        plt.yticks(np.arange(min(y), max(y) + 0.1, 0.1))
+
+        plt.ylabel('FP Rate (Motivation Protection)')
+        plt.xlabel('FN Rate (Counter Vandalism)')
+
+        plt.title('Value Trade-off between Motivation Protection and Counter Vandalism (Editing Quality)')
+        plt.plot(x, y, marker='o')
+        plt.show()
 
 
 def main():
     runner = AccuracyTradeOffs()
-    runner.load_data()
-    runner.run_cross_validation()
+    # runner.load_data()
+    # runner.run_cross_validation()
+    runner.plot_charts()
 
 
 if __name__ == '__main__':
