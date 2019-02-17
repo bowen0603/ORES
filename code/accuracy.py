@@ -11,7 +11,8 @@ __author__ = 'bobo'
 class AccuracyTradeOffs:
 
     def __init__(self):
-        self.n_folds = 10
+        self.decimal = 3
+        self.n_folds = 5
         self.N = 19412
 
         self.data_x = None
@@ -38,47 +39,54 @@ class AccuracyTradeOffs:
     def run_cross_validation(self):
 
         it = 0
+        # Threshold splits between [0, 1]: (1) 0, 1, 21: 0.05; (2) 0, 1, 41: 0.025
+        thresholds = np.linspace(0, 1, 41, endpoint=True)
+        dict_rates_fp = {}
+        dict_rates_fn = {}
+        for threshold in thresholds:
+            threshold = str(round(threshold, self.decimal))
+            dict_rates_fp[threshold] = 0
+            dict_rates_fn[threshold] = 0
+
         for train_idx, test_idx in cv.KFold(self.N, n_folds=self.n_folds):
             it += 1
+            print("Working on Iteration {} ..".format(it))
 
-            # Split the dataset into training and test
             # todo: include editor features here?
             X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
             Y_train, Y_test = self.data_y_damaging[train_idx], self.data_y_damaging[test_idx]
 
-
-            clf = LogisticRegression()
-            clf = AdaBoostClassifier()
+            clf = LogisticRegression()  # default P>0.5
+            # clf = AdaBoostClassifier()
 
             clf.fit(X_train, Y_train)
             Y_pred = clf.predict(X_test)
             Y_pred_score = clf.predict_proba(X_test)
 
-            tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=Y_pred).ravel()
-            rate_fp = fp / (fp + tn)
-            rate_fn = fn / (fn + tp)
-            print("tn: {}, fp: {}, fn: {}, tp: {}".format(tn, fp, fn, tp))
-            print("fp: {}, fn: {}".format(rate_fp, rate_fn))
-
-            # Thresholds on bad faith edits only trained by the model with intent labels ..
-            # Modeling tuning does not affect predictions of the other label ..
-
-            # for threshold in np.arange(0.5, 1.0, 0.05):
-            for threshold in np.linspace(0.5, 1, 11, endpoint=True):
-
+            for threshold in thresholds:
                 list_Y_pred = []
                 for score in Y_pred_score:
-                    print(score)
                     list_Y_pred.append(1 if score[1] >= threshold else 0)
 
                 tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=list_Y_pred).ravel()
                 rate_fp = fp / (fp + tn)
                 rate_fn = fn / (fn + tp)
-                print("tn: {}, fp: {}, fn: {}, tp: {}".format(tn, fp, fn, tp))
-                print("{}, fp: {}, fn: {}".format(threshold, rate_fp, rate_fn))
 
-                # todo: store and compute the average values for 10 folds
-                # TODO: train label bad faith edits
+                threshold = str(round(threshold, self.decimal))
+                dict_rates_fp[threshold] += rate_fp
+                dict_rates_fn[threshold] += rate_fn
+
+        print("Threshold, FP rate, FN rates")
+        for threshold in thresholds:
+            threshold = str(round(threshold, self.decimal))
+            dict_rates_fp[threshold] /= self.n_folds
+            dict_rates_fn[threshold] /= self.n_folds
+            print("{}, \t{:.5f}, \t{:.5f}".format(threshold,
+                                                  dict_rates_fp[threshold],
+                                                  dict_rates_fn[threshold]))
+
+        # TODO: train label bad faith edits
+        # TODO: generate plots ...
 
 
 def main():
