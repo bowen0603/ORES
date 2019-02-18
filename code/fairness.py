@@ -22,7 +22,7 @@ class PredictionFairness:
         self.decimal = 3
         self.n_folds = 5
         self.N = 19412
-        self.eps = 0.0500
+        self.eps = 0.100
 
         self.data_x = None
         self.data_y = None
@@ -139,42 +139,42 @@ class PredictionFairness:
                 # fn for class 1
                 rate_fn_attr1 = 0
                 data_x_attr1 = np.array(self.data_x_attr1)
+                data_x_attr1 = np.delete(data_x_attr1, 0, 1)
                 data_y_attr1 = np.array(self.data_y_attr1)
                 for train_idx, test_idx in cv.KFold(len(self.data_x_attr1), n_folds=self.n_folds):
                     X_train, X_test = data_x_attr1[train_idx], data_x_attr1[test_idx]
                     Y_train, Y_test = data_y_attr1[train_idx], data_y_attr1[test_idx]
 
-                    clf.fit(X_train, Y_train)
-                    Y_pred = clf.predict(X_test)
-                    tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=Y_pred).ravel()
+                    Y_pred = clf.predict(X_train)
+                    tn, fp, fn, tp = confusion_matrix(y_true=Y_train, y_pred=Y_pred).ravel()
                     # print("cl1 FP rate: {}".format(fn / (fn + tp)))
                     rate_fn_attr1 += fn / (fn + tp)
 
                 # fn for class 2
                 rate_fn_attr2 = 0
                 data_x_attr2 = np.array(self.data_x_attr2)
+                data_x_attr2 = np.delete(data_x_attr2, 0, 1)
                 data_y_attr2 = np.array(self.data_y_attr2)
                 for train_idx, test_idx in cv.KFold(len(self.data_x_attr2), n_folds=self.n_folds):
                     X_train, X_test = data_x_attr2[train_idx], data_x_attr2[test_idx]
                     Y_train, Y_test = data_y_attr2[train_idx], data_y_attr2[test_idx]
 
-                    clf.fit(X_train, Y_train)
-                    Y_pred = clf.predict(X_test)
-                    tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=Y_pred).ravel()
+                    Y_pred = clf.predict(X_train)
+                    tn, fp, fn, tp = confusion_matrix(y_true=Y_train, y_pred=Y_pred).ravel()
                     # print("cl2 FP rate: {}".format(fn / (fn + tp)))
                     rate_fn_attr2 += fn / (fn + tp)
 
                 # accuracy of two classes
-                data_x = np.array(self.data_x_attr1 + self.data_x_attr2)
-                data_y = np.array(self.data_y_attr1 + self.data_y_attr2)
                 accuracy = 0
+                data_x = np.array(self.data_x_attr1 + self.data_x_attr2)
+                data_x = np.delete(data_x, 0, 1)
+                data_y = np.array(self.data_y_attr1 + self.data_y_attr2)
                 for train_idx, test_idx in cv.KFold(len(data_x), n_folds=self.n_folds):
                     X_train, X_test = data_x[train_idx], data_x[test_idx]
                     Y_train, Y_test = data_y[train_idx], data_y[test_idx]
 
-                    clf.fit(X_train, Y_train)
-                    Y_pred = clf.predict(X_test)
-                    tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=Y_pred).ravel()
+                    Y_pred = clf.predict(X_train)
+                    tn, fp, fn, tp = confusion_matrix(y_true=Y_train, y_pred=Y_pred).ravel()
                     # print("accuracy rate: {}".format((tp + tn) / (fn + tn + fp + tp)))
                     accuracy += (tp + tn) / (fn + tn + fp + tp)
 
