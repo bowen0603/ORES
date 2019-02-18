@@ -1,5 +1,6 @@
 from file_reader import FileReader
 
+from sklearn.preprocessing import scale
 from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier
@@ -8,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 __author__ = 'bobo'
+
 
 class AccuracyTradeOffs:
 
@@ -20,25 +22,23 @@ class AccuracyTradeOffs:
         self.data_y_badfaith = None
         self.data_y_damaging = None
 
-        self.file_output = "dataset/plot_data.csv"
+        self.label_type = 'intention'
+        # self.label_type = 'quality'
+
+        self.plot_output = "dataset/plot_data"
 
     def load_data(self):
         reader = FileReader()
         reader.read_from_file()
 
+        # TODO: no rescaling on boolean variables..
         self.data_x = self.data_rescale(reader.data_x)
         self.data_y_damaging = reader.data_y_damaging
         self.data_y_badfaith = reader.data_y_badfaith
 
     def data_rescale(self, data):
-        from sklearn.preprocessing import scale
-        # scale the data set to the center
         return scale(data)
 
-    # todo: goal is to generate the full set of data for plots
-    # threshold (bad faith), fp, fn
-    # threshold (damaging), fp, fn
-    # possible to use the model trained by intent labels to predict damaging labels??
     def run_cross_validation(self):
 
         it = 0
@@ -55,9 +55,17 @@ class AccuracyTradeOffs:
             it += 1
             print("Working on Iteration {} ..".format(it))
 
+            if self.label_type == 'quality':
+                data_y = self.data_y_damaging
+            elif self.label_type == 'intention':
+                data_y = self.data_y_badfaith
+            else:
+                print("Invalid prediction label ..")
+                return
+
             # todo: include editor features here?
             X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
-            Y_train, Y_test = self.data_y_damaging[train_idx], self.data_y_damaging[test_idx]
+            Y_train, Y_test = data_y[train_idx], data_y[test_idx]
 
             clf = LogisticRegression()  # default P>0.5
             # clf = AdaBoostClassifier()
@@ -79,7 +87,7 @@ class AccuracyTradeOffs:
                 dict_rates_fp[threshold] += rate_fp
                 dict_rates_fn[threshold] += rate_fn
 
-        f_output = open(self.file_output, 'w')
+        f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
         print("Threshold, FP rate, FN rates")
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
@@ -92,12 +100,11 @@ class AccuracyTradeOffs:
             print("{},{:.5f},{:.5f}".format(threshold,
                                             dict_rates_fp[threshold],
                                             dict_rates_fn[threshold]), file=f_output)
-        # TODO: train label bad faith edits
 
     def plot_charts(self):
         x = []
         y = []
-        for line in open(self.file_output, 'r'):
+        for line in open("{}_{}.csv".format(self.plot_output, self.label_type), 'r'):
             threshold, fp, fn = line.strip().split(',')
             y.append(float(fp))
             x.append(float(fn))
@@ -106,10 +113,18 @@ class AccuracyTradeOffs:
         plt.xticks(np.arange(min(x), max(x) + 0.1, 0.1))
         plt.yticks(np.arange(min(y), max(y) + 0.1, 0.1))
 
-        plt.ylabel('FP Rate (Motivation Protection)')
-        plt.xlabel('FN Rate (Counter Vandalism)')
+        if self.label_type == 'quality':
+            plt.ylabel('FP Rate (Save Patrollers’ Efforts)')
+            plt.xlabel('FN Rate (Quality Control)')
+            plt.title('Value Trade-off between Save Patrollers’ Efforts and Quality Control\n(Editing Quality)')
+        elif self.label_type == 'intention':
+            plt.ylabel('FP Rate (Motivation Protection)')
+            plt.xlabel('FN Rate (Counter-Vandalism)')
+            plt.title('Value Trade-off between Motivation Protection and Counter Vandalism\n(Editing Intention)')
+        else:
+            print("Invalid prediction label ..")
+            return
 
-        plt.title('Value Trade-off between Motivation Protection and Counter Vandalism (Editing Quality)')
         plt.plot(x, y, marker='o')
         plt.show()
 

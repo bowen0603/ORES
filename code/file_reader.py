@@ -5,6 +5,7 @@ import pickle
 import base64
 import numpy as np
 
+
 class FileReader:
     def __init__(self):
         self.filename = 'dataset/enwiki.labeled_revisions.w_cache.20k_2015.json'
