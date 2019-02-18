@@ -25,7 +25,7 @@ class AccuracyTradeOffs:
         self.label_type = 'intention'
         # self.label_type = 'quality'
 
-        self.plot_output = "dataset/plot_data"
+        self.plot_output = "dataset/plot_data_accuracy"
 
     def load_data(self):
         reader = FileReader()
