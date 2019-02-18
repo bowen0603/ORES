@@ -29,10 +29,10 @@ class PredictionFairness:
         self.data_x_protected = None
         self.data_y_badfaith = None
         self.data_y_damaging = None
-        self.data_x_cl1 = []
-        self.data_y_cl1 = []
-        self.data_x_cl2 = []
-        self.data_y_cl2 = []
+        self.data_x_attr1 = []
+        self.data_y_attr1 = []
+        self.data_x_attr2 = []
+        self.data_y_attr2 = []
 
         self.label_type = 'quality'
         self.plot_output = 'dataset/plot_data_fairness'
@@ -92,17 +92,17 @@ class PredictionFairness:
                 data_x.append(self.data_x[i])
                 data_y.append(self.data_y[i])
 
-            # Collect data for two classes
+            # Collect data for two attributes
             if self.data_x[i][0] == 0:
                 data_x.append(self.data_x[i])
                 data_y.append(self.data_y[i])
 
-                self.data_x_cl1.append(self.data_x[i])
-                self.data_y_cl1.append(self.data_y[i])
+                self.data_x_attr1.append(self.data_x[i])
+                self.data_y_attr1.append(self.data_y[i])
 
             if self.data_x[i][0] == 1:
-                self.data_x_cl2.append(self.data_x[i])
-                self.data_y_cl2.append(self.data_y[i])
+                self.data_x_attr2.append(self.data_x[i])
+                self.data_y_attr2.append(self.data_y[i])
 
         self.data_x = np.array(data_x)
         self.data_y = pd.Series(data_y)
@@ -137,36 +137,36 @@ class PredictionFairness:
                 clf_cnt += 1
 
                 # fn for class 1
-                rate_fn_cl1 = 0
-                data_x_cl1 = np.array(self.data_x_cl1)
-                data_y_cl1 = np.array(self.data_y_cl1)
-                for train_idx, test_idx in cv.KFold(len(self.data_x_cl1), n_folds=self.n_folds):
-                    X_train, X_test = data_x_cl1[train_idx], data_x_cl1[test_idx]
-                    Y_train, Y_test = data_y_cl1[train_idx], data_y_cl1[test_idx]
+                rate_fn_attr1 = 0
+                data_x_attr1 = np.array(self.data_x_attr1)
+                data_y_attr1 = np.array(self.data_y_attr1)
+                for train_idx, test_idx in cv.KFold(len(self.data_x_attr1), n_folds=self.n_folds):
+                    X_train, X_test = data_x_attr1[train_idx], data_x_attr1[test_idx]
+                    Y_train, Y_test = data_y_attr1[train_idx], data_y_attr1[test_idx]
 
                     clf.fit(X_train, Y_train)
                     Y_pred = clf.predict(X_test)
                     tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=Y_pred).ravel()
                     # print("cl1 FP rate: {}".format(fn / (fn + tp)))
-                    rate_fn_cl1 += fn / (fn + tp)
+                    rate_fn_attr1 += fn / (fn + tp)
 
                 # fn for class 2
-                rate_fn_cl2 = 0
-                data_x_cl2 = np.array(self.data_x_cl2)
-                data_y_cl2 = np.array(self.data_y_cl2)
-                for train_idx, test_idx in cv.KFold(len(self.data_x_cl2), n_folds=self.n_folds):
-                    X_train, X_test = data_x_cl2[train_idx], data_x_cl2[test_idx]
-                    Y_train, Y_test = data_y_cl2[train_idx], data_y_cl2[test_idx]
+                rate_fn_attr2 = 0
+                data_x_attr2 = np.array(self.data_x_attr2)
+                data_y_attr2 = np.array(self.data_y_attr2)
+                for train_idx, test_idx in cv.KFold(len(self.data_x_attr2), n_folds=self.n_folds):
+                    X_train, X_test = data_x_attr2[train_idx], data_x_attr2[test_idx]
+                    Y_train, Y_test = data_y_attr2[train_idx], data_y_attr2[test_idx]
 
                     clf.fit(X_train, Y_train)
                     Y_pred = clf.predict(X_test)
                     tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=Y_pred).ravel()
                     # print("cl2 FP rate: {}".format(fn / (fn + tp)))
-                    rate_fn_cl2 += fn / (fn + tp)
+                    rate_fn_attr2 += fn / (fn + tp)
 
                 # accuracy of two classes
-                data_x = np.array(self.data_x_cl1 + self.data_x_cl2)
-                data_y = np.array(self.data_y_cl1 + self.data_y_cl2)
+                data_x = np.array(self.data_x_attr1 + self.data_x_attr2)
+                data_y = np.array(self.data_y_attr1 + self.data_y_attr2)
                 accuracy = 0
                 for train_idx, test_idx in cv.KFold(len(data_x), n_folds=self.n_folds):
                     X_train, X_test = data_x[train_idx], data_x[test_idx]
@@ -179,10 +179,10 @@ class PredictionFairness:
                     accuracy += (tp + tn) / (fn + tn + fp + tp)
 
                 print("Model {}: unfairness disparity {:.5f}, accuracy {:.5f}".format(clf_cnt,
-                                                                                      abs(rate_fn_cl2 - rate_fn_cl1)/self.n_folds,
+                                                                                      abs(rate_fn_attr2 - rate_fn_attr1)/self.n_folds,
                                                                                       accuracy/self.n_folds))
                 print("{},{},{}".format(clf_cnt,
-                                        abs(rate_fn_cl2 - rate_fn_cl1) / self.n_folds,
+                                        abs(rate_fn_attr2 - rate_fn_attr1) / self.n_folds,
                                         accuracy / self.n_folds), file=f_output)
 
     def plot_charts(self):
