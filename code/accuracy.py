@@ -22,8 +22,7 @@ class AccuracyTradeOffs:
         self.data_y_badfaith = None
         self.data_y_damaging = None
 
-        self.label_type = 'intention'
-        # self.label_type = 'quality'
+        self.label_type = 'quality'
 
         self.plot_output = "dataset/plot_data_accuracy"
 
@@ -67,11 +66,10 @@ class AccuracyTradeOffs:
             X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
             Y_train, Y_test = data_y[train_idx], data_y[test_idx]
 
-            clf = LogisticRegression()  # default P>0.5
-            # clf = AdaBoostClassifier()
+            # clf = LogisticRegression()  # default P>0.5
+            clf = AdaBoostClassifier()
 
             clf.fit(X_train, Y_train)
-            Y_pred = clf.predict(X_test)
             Y_pred_score = clf.predict_proba(X_test)
 
             for threshold in thresholds:
@@ -88,14 +86,14 @@ class AccuracyTradeOffs:
                 dict_rates_fn[threshold] += rate_fn
 
         f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
-        print("Threshold, FP rate, FN rates")
+        # print("Threshold, FP rate, FN rates")
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
             dict_rates_fp[threshold] /= self.n_folds
             dict_rates_fn[threshold] /= self.n_folds
-            print("{}, \t{:.5f}, \t{:.5f}".format(threshold,
-                                                  dict_rates_fp[threshold],
-                                                  dict_rates_fn[threshold]))
+            # print("{}, \t{:.5f}, \t{:.5f}".format(threshold,
+            #                                       dict_rates_fp[threshold],
+            #                                       dict_rates_fn[threshold]))
 
             print("{},{:.5f},{:.5f}".format(threshold,
                                             dict_rates_fp[threshold],
@@ -131,8 +129,8 @@ class AccuracyTradeOffs:
 
 def main():
     runner = AccuracyTradeOffs()
-    # runner.load_data()
-    # runner.run_cross_validation()
+    runner.load_data()
+    runner.run_cross_validation()
     runner.plot_charts()
 
 

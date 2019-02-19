@@ -179,7 +179,7 @@ class PredictionFairness:
                     accuracy += (tp + tn) / (fn + tn + fp + tp)
 
                 print("Model {}: unfairness disparity {:.5f}, accuracy {:.5f}".format(clf_cnt,
-                                                                                      abs(rate_fn_attr2 - rate_fn_attr1)/self.n_folds,
+                                                                                      abs(rate_fn_attr2/self.n_folds - rate_fn_attr1/self.n_folds),
                                                                                       accuracy/self.n_folds))
                 print("{},{},{}".format(clf_cnt,
                                         abs(rate_fn_attr2 - rate_fn_attr1) / self.n_folds,
