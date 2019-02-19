@@ -4,6 +4,8 @@ from sklearn.preprocessing import scale
 from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn import cross_validation as cv
 import numpy as np
 import matplotlib.pyplot as plt
@@ -45,10 +47,19 @@ class AccuracyTradeOffs:
         thresholds = np.linspace(0, 1, 41, endpoint=True)
         dict_rates_fp = {}
         dict_rates_fn = {}
+        dict_precision = {}
+        dict_accuracy = {}
+        dict_rates_tp = {}  # recall
+        dict_rates_tn = {}
+
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
             dict_rates_fp[threshold] = 0
             dict_rates_fn[threshold] = 0
+            dict_precision[threshold] = 0
+            dict_accuracy[threshold] = 0
+            dict_rates_tp[threshold] = 0
+            dict_rates_tn[threshold] = 0
 
         for train_idx, test_idx in cv.KFold(self.N, n_folds=self.n_folds):
             it += 1
@@ -67,7 +78,9 @@ class AccuracyTradeOffs:
             Y_train, Y_test = data_y[train_idx], data_y[test_idx]
 
             # clf = LogisticRegression()  # default P>0.5
-            clf = AdaBoostClassifier()
+            # clf = AdaBoostClassifier()
+            # clf = RandomForestClassifier()
+            clf = MLPClassifier()
 
             clf.fit(X_train, Y_train)
             Y_pred_score = clf.predict_proba(X_test)
@@ -79,14 +92,22 @@ class AccuracyTradeOffs:
 
                 tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=list_Y_pred).ravel()
                 rate_fp = fp / (fp + tn)
+                rate_tp = tp / (tp + fn)  # recall
                 rate_fn = fn / (fn + tp)
+                rate_tn = tn / (tn + fp)
+                precision = 0 if tp + fp == 0 else tp / (tp + fp)
+                accuracy = (tp + tn) / (tp + tn + fp + fn)
 
                 threshold = str(round(threshold, self.decimal))
                 dict_rates_fp[threshold] += rate_fp
                 dict_rates_fn[threshold] += rate_fn
 
+                dict_precision[threshold] += precision
+                dict_rates_tp[threshold] += rate_tp
+                dict_accuracy[threshold] += accuracy
+                dict_rates_tn[threshold] += rate_tn
+
         f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
-        # print("Threshold, FP rate, FN rates")
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
             dict_rates_fp[threshold] /= self.n_folds
@@ -98,6 +119,16 @@ class AccuracyTradeOffs:
             print("{},{:.5f},{:.5f}".format(threshold,
                                             dict_rates_fp[threshold],
                                             dict_rates_fn[threshold]), file=f_output)
+
+            dict_precision[threshold] /= self.n_folds
+            dict_rates_tp[threshold] /= self.n_folds  # recall
+            dict_accuracy[threshold] /= self.n_folds
+            dict_rates_tn[threshold] /= self.n_folds
+
+            print("{} \t{:.5f} \t{:.5f} \t{:.5f}".format(threshold,
+                                                         dict_precision[threshold],
+                                                         dict_rates_tp[threshold],
+                                                         dict_accuracy[threshold]))
 
     def plot_charts(self):
         x = []
