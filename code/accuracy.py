@@ -2,11 +2,15 @@ from file_reader import FileReader
 
 from sklearn.preprocessing import scale
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import average_precision_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn import cross_validation as cv
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -33,7 +37,8 @@ class AccuracyTradeOffs:
         reader.read_from_file()
 
         # TODO: no rescaling on boolean variables..
-        self.data_x = self.data_rescale(reader.data_x)
+        # self.data_x = self.data_rescale(reader.data_x)
+        self.data_x = reader.data_x
         self.data_y_damaging = reader.data_y_damaging
         self.data_y_badfaith = reader.data_y_badfaith
 
@@ -49,8 +54,11 @@ class AccuracyTradeOffs:
         dict_rates_fn = {}
         dict_precision = {}
         dict_accuracy = {}
-        dict_rates_tp = {}  # recall
-        dict_rates_tn = {}
+        dict_sensitivity = {}  # recall
+        dict_specificity = {}
+
+        list_roc_auc = []
+        list_pr_auc = []
 
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
@@ -58,8 +66,8 @@ class AccuracyTradeOffs:
             dict_rates_fn[threshold] = 0
             dict_precision[threshold] = 0
             dict_accuracy[threshold] = 0
-            dict_rates_tp[threshold] = 0
-            dict_rates_tn[threshold] = 0
+            dict_sensitivity[threshold] = 0
+            dict_specificity[threshold] = 0
 
         for train_idx, test_idx in cv.KFold(self.N, n_folds=self.n_folds):
             it += 1
@@ -79,22 +87,29 @@ class AccuracyTradeOffs:
 
             # clf = LogisticRegression()  # default P>0.5
             # clf = AdaBoostClassifier()
+            clf = GradientBoostingClassifier()
             # clf = RandomForestClassifier()
-            clf = MLPClassifier()
+            # clf = MLPClassifier()
 
             clf.fit(X_train, Y_train)
-            Y_pred_score = clf.predict_proba(X_test)
+            Y_pred_prob = clf.predict_proba(X_test)
+            Y_pred_score = []
+            for neg, pos in Y_pred_prob:
+                Y_pred_score.append(pos)
+
+            list_roc_auc.append(roc_auc_score(y_true=Y_test, y_score=Y_pred_score))
+            list_pr_auc.append(average_precision_score(y_true=Y_test, y_score=Y_pred_score))
 
             for threshold in thresholds:
                 list_Y_pred = []
-                for score in Y_pred_score:
+                for score in Y_pred_prob:
                     list_Y_pred.append(1 if score[1] >= threshold else 0)
 
                 tn, fp, fn, tp = confusion_matrix(y_true=Y_test, y_pred=list_Y_pred).ravel()
                 rate_fp = fp / (fp + tn)
-                rate_tp = tp / (tp + fn)  # recall
+                rate_tp = tp / (tp + fn)  # sensitivity/recall/true positive rates
                 rate_fn = fn / (fn + tp)
-                rate_tn = tn / (tn + fp)
+                rate_tn = tn / (tn + fp)  # specificity/true negative rates
                 precision = 0 if tp + fp == 0 else tp / (tp + fp)
                 accuracy = (tp + tn) / (tp + tn + fp + fn)
 
@@ -103,11 +118,12 @@ class AccuracyTradeOffs:
                 dict_rates_fn[threshold] += rate_fn
 
                 dict_precision[threshold] += precision
-                dict_rates_tp[threshold] += rate_tp
+                dict_sensitivity[threshold] += rate_tp
                 dict_accuracy[threshold] += accuracy
-                dict_rates_tn[threshold] += rate_tn
+                dict_specificity[threshold] += rate_tn
 
         f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
+        print("Threshold  Precision  Sensitivity/Recall  Specificity  Accuracy")
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
             dict_rates_fp[threshold] /= self.n_folds
@@ -121,14 +137,18 @@ class AccuracyTradeOffs:
                                             dict_rates_fn[threshold]), file=f_output)
 
             dict_precision[threshold] /= self.n_folds
-            dict_rates_tp[threshold] /= self.n_folds  # recall
+            dict_sensitivity[threshold] /= self.n_folds  # recall
             dict_accuracy[threshold] /= self.n_folds
-            dict_rates_tn[threshold] /= self.n_folds
+            dict_specificity[threshold] /= self.n_folds
 
-            print("{} \t{:.5f} \t{:.5f} \t{:.5f}".format(threshold,
-                                                         dict_precision[threshold],
-                                                         dict_rates_tp[threshold],
-                                                         dict_accuracy[threshold]))
+            print("{}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(threshold,
+                                                              dict_precision[threshold],
+                                                              dict_sensitivity[threshold],
+                                                              dict_specificity[threshold],
+                                                              dict_accuracy[threshold]))
+
+        print("ROC_AUC {}\tPR_AUC {}".format(sum(list_roc_auc) / len(list_roc_auc),
+                                             sum(list_pr_auc) / len(list_pr_auc)))
 
     def plot_charts(self):
         x = []
