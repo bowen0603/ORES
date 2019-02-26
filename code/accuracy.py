@@ -9,6 +9,7 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
+from sklearn.tree import DecisionTreeClassifier
 from sklearn import cross_validation as cv
 
 import numpy as np
@@ -86,11 +87,13 @@ class AccuracyTradeOffs:
             X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
             Y_train, Y_test = data_y[train_idx], data_y[test_idx]
 
-            # clf = LogisticRegression()  # default P>0.5
+            # clf = LogisticRegression(max_iter=500, penalty='l1', C=1)  # default P>0.5
             # clf = AdaBoostClassifier()
-            # clf = GradientBoostingClassifier()
-            # clf = RandomForestClassifier()
-            clf = MLPClassifier()
+            # clf = AdaBoostClassifier(learning_rate=0.01, n_estimators=100,
+            #                          base_estimator=DecisionTreeClassifier(max_depth=4, max_features="sqrt"))
+            # clf = GradientBoostingClassifier(learning_rate=0.01, max_depth=7, max_features="sqrt", n_estimators=700)
+            # clf = RandomForestClassifier(n_estimators=500, max_features="sqrt", max_depth=7)
+            clf = MLPClassifier(learning_rate='adaptive', max_iter=500, hidden_layer_sizes=100)
 
             clf.fit(X_train, Y_train)
             Y_pred_prob = clf.predict_proba(X_test)
