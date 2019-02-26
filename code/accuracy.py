@@ -28,7 +28,8 @@ class AccuracyTradeOffs:
         self.data_y_badfaith = None
         self.data_y_damaging = None
 
-        self.label_type = 'quality'
+        # self.label_type = 'quality'
+        self.label_type = 'intention'
 
         self.plot_output = "dataset/plot_data_accuracy"
 
@@ -87,9 +88,9 @@ class AccuracyTradeOffs:
 
             # clf = LogisticRegression()  # default P>0.5
             # clf = AdaBoostClassifier()
-            clf = GradientBoostingClassifier()
+            # clf = GradientBoostingClassifier()
             # clf = RandomForestClassifier()
-            # clf = MLPClassifier()
+            clf = MLPClassifier()
 
             clf.fit(X_train, Y_train)
             Y_pred_prob = clf.predict_proba(X_test)
@@ -123,7 +124,7 @@ class AccuracyTradeOffs:
                 dict_specificity[threshold] += rate_tn
 
         f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
-        print("Threshold  Precision  Sensitivity/Recall  Specificity  Accuracy")
+        print("Threshold  Precision  Sensitivity/Recall  Specificity  Accuracy  False Positive  False Negative")
         for threshold in thresholds:
             threshold = str(round(threshold, self.decimal))
             dict_rates_fp[threshold] /= self.n_folds
@@ -141,11 +142,13 @@ class AccuracyTradeOffs:
             dict_accuracy[threshold] /= self.n_folds
             dict_specificity[threshold] /= self.n_folds
 
-            print("{}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(threshold,
-                                                              dict_precision[threshold],
-                                                              dict_sensitivity[threshold],
-                                                              dict_specificity[threshold],
-                                                              dict_accuracy[threshold]))
+            print("{:.3f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(float(threshold),
+                                                                                  dict_precision[threshold],
+                                                                                  dict_sensitivity[threshold],
+                                                                                  dict_specificity[threshold],
+                                                                                  dict_accuracy[threshold],
+                                                                                  dict_rates_fp[threshold],
+                                                                                  dict_rates_fn[threshold]))
 
         print("ROC_AUC {}\tPR_AUC {}".format(sum(list_roc_auc) / len(list_roc_auc),
                                              sum(list_pr_auc) / len(list_pr_auc)))

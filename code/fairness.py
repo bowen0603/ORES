@@ -7,11 +7,14 @@ import pandas as pd
 import fairlearn.moments as moments
 import fairlearn.classred as red
 from sklearn import cross_validation as cv
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import operator
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier
 
 __author__ = 'bobo'
 
@@ -20,7 +23,7 @@ class PredictionFairness:
 
     def __init__(self):
         self.decimal = 3
-        self.n_folds = 5
+        self.n_folds = 1
         self.N = 19412
         self.eps = 0.100
 
@@ -109,11 +112,65 @@ class PredictionFairness:
 
         # extract the column of the protected attribute (convert to string ..)
         self.data_x_protected = pd.Series(self.data_x[:, [0]].tolist()).apply(str)
-        # delete the column of the protected attribute
-        self.data_x = np.delete(self.data_x, 0, 1)
+        # todo: delete the column of the protected attribute
+        # self.data_x = np.delete(self.data_x, 0, 1)
 
         # case 2: equalize FP rates
         # todo: make all the negative examples (y=0) in the same group (set all of them to have a = 0 again)
+
+    def run_train_test_split(self):
+        indices = np.arange(len(self.data_x))
+        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(self.data_x, self.data_y, indices,
+                                                                                 test_size=0.3, random_state=42)
+
+        X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
+        y_train, y_test = self.data_y[train_idx], self.data_y[test_idx]
+        X_train_protected, X_test_protected = self.data_x_protected[train_idx], self.data_x_protected[test_idx]
+
+        res = red.expgrad(dataX=pd.DataFrame(np.delete(X_train, 0, 1)), dataA=X_train_protected, dataY=y_train,
+                          learner=RandomForestClassifier(), cons=moments.EO(), eps=self.eps)._asdict()
+
+        mask_idx_train_attr0, mask_idx_train_attr1 = pd.DataFrame(X_train)[0] == 0, pd.DataFrame(X_train)[0] == 1
+        mask_idx_test_attr0, mask_idx_test_attr1 = pd.DataFrame(X_test)[0] == 0, pd.DataFrame(X_test)[0] == 1
+
+        X_train_attr0, X_train_attr1 = np.delete(X_train[mask_idx_train_attr0], 0, 1), np.delete(X_train[mask_idx_train_attr1], 0, 1)
+        y_train_attr0, y_train_attr1 = y_train[mask_idx_train_attr0.values], y_train[mask_idx_train_attr1.values]
+
+        X_test_attr0, X_test_attr1 = np.delete(X_test[mask_idx_test_attr0], 0, 1), np.delete(X_test[mask_idx_test_attr1], 0, 1)
+        y_test_attr0, y_test_attr1 = y_test[mask_idx_test_attr0.values], y_test[mask_idx_test_attr1.values]
+
+        f_output_train = open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'w')
+        f_output_test = open("{}_{}_test.csv".format(self.plot_output, self.label_type), 'w')
+
+        clf_cnt = 0
+        for clf in res['classifiers']:
+            clf_cnt += 1
+
+            # results of training data
+            y_pred_attr0 = clf.predict(X_train_attr0)
+            tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_train_attr0.values, y_pred=y_pred_attr0, labels=[0,1]).ravel()
+            y_pred_attr1 = clf.predict(X_train_attr1)
+            tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_train_attr1.values, y_pred=y_pred_attr1, labels=[0,1]).ravel()
+
+            rate_fn_attr0 = fn0 / (fn0 + tp0)
+            rate_fn_attr1 = fn1 / (fn1 + tp1)
+            disparity_train = abs(rate_fn_attr0 - rate_fn_attr1)
+            acc_train = (tp0 + tn0 + tp1 + tn1) / (tn0 + fp0 + fn0 + tp0 + tn1 + fp1 + fn1 + tp1)
+
+            # results of test data
+            y_pred_attr0 = clf.predict(X_test_attr0)
+            tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_test_attr0.values, y_pred=y_pred_attr0, labels=[0,1]).ravel()
+
+            y_pred_attr1 = clf.predict(X_test_attr1)
+            tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_test_attr1.values, y_pred=y_pred_attr1, labels=[0,1]).ravel()
+
+            rate_fn_attr0 = fn0 / (fn0 + tp0)
+            rate_fn_attr1 = fn1 / (fn1 + tp1)
+            disparity_test = abs(rate_fn_attr0 - rate_fn_attr1)
+            acc_test = (tp0 + tn0 + tp1 + tn1) / (tn0 + fp0 + fn0 + tp0 + tn1 + fp1 + fn1 + tp1)
+
+            print("{},{},{}".format(clf_cnt, disparity_train, acc_train), file=f_output_train)
+            print("{},{},{}".format(clf_cnt, disparity_test, acc_test), file=f_output_test)
 
     def run_cross_validation(self):
 
@@ -189,7 +246,7 @@ class PredictionFairness:
         x = []
         y = []
         d = {}
-        for line in open("{}_{}.csv".format(self.plot_output, self.label_type), 'r'):
+        for line in open("{}_{}_test.csv".format(self.plot_output, self.label_type), 'r'):
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
             accuracy = float(accuracy)
@@ -201,14 +258,16 @@ class PredictionFairness:
         for key, val in d.items():
             d[key] = sum(d[key]) / len(d[key])
 
-        for unfairness, accuracy in sorted(d.items(), key=operator.itemgetter(1)):
-            y.append(unfairness)
-            x.append(accuracy)
+        for unfairness, accuracy in sorted(d.items(), key=operator.itemgetter(0)):  # sorted by unfairness
+            # y.append(unfairness)
+            # x.append(accuracy)
+            x.append(unfairness)
+            y.append(accuracy)
 
         if self.label_type == 'quality':
             # equalizing FN
-            plt.ylabel('Unfairness (Disparity of False Negative Rates/Quality Control)')
-            plt.xlabel('Prediction accuracy')
+            plt.xlabel('Unfairness (Disparity of False Negative Rates/Quality Control)')
+            plt.ylabel('Prediction accuracy')
             plt.title('Value Trade-off between Unfairness and Prediction Accuracy\n(Editing Quality)')
         elif self.label_type == 'intention':
             # equalizing FN
@@ -229,6 +288,7 @@ def main():
     runner.load_data()
     runner.data_reformulation()
     runner.run_cross_validation()
+    runner.run_train_test_split()
     runner.plot_charts()
 
 if __name__ == '__main__':
