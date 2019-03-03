@@ -26,16 +26,17 @@ class PredictionFairness:
         self.n_folds = 1
         self.N = 19412
         self.eps = 0.100
+        self.list_eps = [0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.2, 0.4, 0.6, 0.8, 1]
 
-        self.data_x = None
+        self.data_adjusted_x = None
         self.data_y = None
         self.data_x_protected = None
         self.data_y_badfaith = None
         self.data_y_damaging = None
-        self.data_x_attr0 = []
-        self.data_y_attr0 = []
-        self.data_x_attr1 = []
-        self.data_y_attr1 = []
+        self.data_x_g0 = []
+        self.data_y_g0 = []
+        self.data_x_g1 = []
+        self.data_y_g1 = []
 
         self.label_type = 'quality'
         self.plot_output = 'dataset/plot_data_fairness'
@@ -46,7 +47,7 @@ class PredictionFairness:
 
         # TODO: no rescaling on boolean variables..
         # self.data_x = self.data_rescale(reader.data_x)
-        self.data_x = reader.data_x
+        self.data_adjusted_x = reader.data_x
         self.data_y_damaging = reader.data_y_damaging
         self.data_y_badfaith = reader.data_y_badfaith
 
@@ -79,35 +80,35 @@ class PredictionFairness:
         else:
             return
 
-        for i in range(len(self.data_x)):
+        for i in range(len(self.data_adjusted_x)):
 
-            if self.data_y[i] == 1 and self.data_x[i][0] == 1:
+            if self.data_y[i] == 1 and self.data_adjusted_x[i][0] == 1:
                 cnt_anon_pos += 1
-            if self.data_y[i] == 0 and self.data_x[i][0] == 1:
+            if self.data_y[i] == 0 and self.data_adjusted_x[i][0] == 1:
                 cnt_anon_neg += 1
-            if self.data_y[i] == 1 and self.data_x[i][0] == 0:
+            if self.data_y[i] == 1 and self.data_adjusted_x[i][0] == 0:
                 cnt_reg_pos += 1
-            if self.data_y[i] == 0 and self.data_x[i][0] == 0:
+            if self.data_y[i] == 0 and self.data_adjusted_x[i][0] == 0:
                 cnt_reg_neg += 1
 
             # Make all the positive examples with y=1 belong to the same group (a = 1)
-            if self.data_y[i] == 1 and self.data_x[i][0] == 1:
-                data_x.append(self.data_x[i])
+            if self.data_y[i] == 1 and self.data_adjusted_x[i][0] == 1:
+                data_x.append(self.data_adjusted_x[i])
                 data_y.append(self.data_y[i])
 
             # Collect data for two attributes
-            if self.data_x[i][0] == 0:
-                data_x.append(self.data_x[i])
+            if self.data_adjusted_x[i][0] == 0:
+                data_x.append(self.data_adjusted_x[i])
                 data_y.append(self.data_y[i])
 
-                self.data_x_attr0.append(self.data_x[i])
-                self.data_y_attr0.append(self.data_y[i])
+                self.data_x_g0.append(self.data_adjusted_x[i])
+                self.data_y_g0.append(self.data_y[i])
 
-            if self.data_x[i][0] == 1:
-                self.data_x_attr1.append(self.data_x[i])
-                self.data_y_attr1.append(self.data_y[i])
+            if self.data_adjusted_x[i][0] == 1:
+                self.data_x_g1.append(self.data_adjusted_x[i])
+                self.data_y_g1.append(self.data_y[i])
 
-        self.data_x = np.array(data_x)
+        self.data_adjusted_x = np.array(data_x)
         self.data_y = pd.Series(data_y)
 
         print("Attr 0 (registered): {}, Attr 1: {} (unregistered).".format(cnt_reg_pos + cnt_reg_neg,
@@ -116,176 +117,77 @@ class PredictionFairness:
 
 
         # extract the column of the protected attribute (convert to string ..)
-        self.data_x_protected = pd.Series(self.data_x[:, [0]].tolist()).apply(str)
+        self.data_x_protected = pd.Series(self.data_adjusted_x[:, [0]].tolist()).apply(str)
         # delete the column of the protected attribute
         # self.data_x = np.delete(self.data_x, 0, 1)
 
         # case 2: equalize FP rates
         # todo: make all the negative examples (y=0) in the same group (set all of them to have a = 0 again)
 
+    @staticmethod
+    def split_train_test_data(data_x, data_y):
+        indices = np.arange(len(data_x))
+
+        data_x = np.array(data_x)
+        data_x = np.delete(data_x, 0, 1)
+        data_y = np.array(data_y)
+        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(data_x, data_y,
+                                                                                 indices,
+                                                                                 test_size=0.7, random_state=12)
+        X_train, X_test = data_x[train_idx], data_x[test_idx]
+        y_train, y_test = data_y[train_idx], data_y[test_idx]
+        return X_train, X_test, y_train, y_test
+
+    def collect_classifiers(self):
+        return [LogisticRegression(), RandomForestClassifier(), GradientBoostingClassifier()]
+
     def run_train_test_split(self):
-        indices = np.arange(len(self.data_x))
-        # i didn't split the data properly here ..?
-        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(self.data_x, self.data_y, indices,
+        indices = np.arange(len(self.data_adjusted_x))
+        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(self.data_adjusted_x, self.data_y, indices,
                                                                                  test_size=0.7, random_state=12)
 
-        X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
+        X_train, X_test = self.data_adjusted_x[train_idx], self.data_adjusted_x[test_idx]
         y_train, y_test = self.data_y[train_idx], self.data_y[test_idx]
         X_train_protected, X_test_protected = self.data_x_protected[train_idx], self.data_x_protected[test_idx]
-
-        res = red.expgrad(dataX=pd.DataFrame(np.delete(X_train, 0, 1)), dataA=X_train_protected, dataY=y_train,
-                          # learner=LogisticRegression(),
-                          # learner=RandomForestClassifier(),
-                          learner=GradientBoostingClassifier(),
-                          cons=moments.EO(), eps=self.eps)._asdict()
-
-        # mask_idx_train_attr0, mask_idx_train_attr1 = pd.DataFrame(X_train)[0] == 0, pd.DataFrame(X_train)[0] == 1
-        # mask_idx_test_attr0, mask_idx_test_attr1 = pd.DataFrame(X_test)[0] == 0, pd.DataFrame(X_test)[0] == 1
-        #
-        # # delete column of protected feature for train and test datasets
-        # X_train_attr0, X_train_attr1 = np.delete(X_train[mask_idx_train_attr0], 0, 1), np.delete(X_train[mask_idx_train_attr1], 0, 1)
-        # y_train_attr0, y_train_attr1 = y_train[mask_idx_train_attr0.values], y_train[mask_idx_train_attr1.values]
-        #
-        # X_test_attr0, X_test_attr1 = np.delete(X_test[mask_idx_test_attr0], 0, 1), np.delete(X_test[mask_idx_test_attr1], 0, 1)
-        # y_test_attr0, y_test_attr1 = y_test[mask_idx_test_attr0.values], y_test[mask_idx_test_attr1.values]
-
-        ################################################################################
-        # use the complete data for group attr0 and attr1
-        indices = np.arange(len(self.data_x_attr0))
-
-        data_x_attr0 = np.array(self.data_x_attr0)
-        data_x_attr0 = np.delete(data_x_attr0, 0, 1)
-        data_y_attr0 = np.array(self.data_y_attr0)
-        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(data_x_attr0, data_y_attr0,
-                                                                                 indices,
-                                                                                 test_size=0.7, random_state=12)
-        X_train_attr0, X_test_attr0 = data_x_attr0[train_idx], data_x_attr0[test_idx]
-        y_train_attr0, y_test_attr0 = data_y_attr0[train_idx], data_y_attr0[test_idx]
-
-        indices = np.arange(len(self.data_x_attr1))
-        data_x_attr1 = np.array(self.data_x_attr1)
-        data_x_attr1 = np.delete(data_x_attr1, 0, 1)
-        data_y_attr1 = np.array(self.data_y_attr1)
-        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(data_x_attr1, data_y_attr1,
-                                                                                 indices,
-                                                                                 test_size=0.7, random_state=12)
-        X_train_attr1, X_test_attr1 = data_x_attr1[train_idx], data_x_attr1[test_idx]
-        y_train_attr1, y_test_attr1 = data_y_attr1[train_idx], data_y_attr1[test_idx]
-
-        indices = np.arange(len(self.data_x_attr0 + self.data_x_attr1))
-        data_x_attr01 = np.array(self.data_x_attr0 + self.data_x_attr1)
-        data_x_attr01 = np.delete(data_x_attr01, 0, 1)
-        data_y_attr01 = np.array(self.data_y_attr0 + self.data_y_attr1)
-        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(data_x_attr01, data_y_attr01,
-                                                                                 indices,
-                                                                                 test_size=0.7, random_state=12)
-        X_train_attr01, X_test_attr01 = data_x_attr01[train_idx], data_x_attr01[test_idx]
-        y_train_attr01, y_test_attr01 = data_y_attr01[train_idx], data_y_attr01[test_idx]
 
         f_output_train = open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'w')
         f_output_test = open("{}_{}_test.csv".format(self.plot_output, self.label_type), 'w')
 
-        rfc = RandomForestClassifier()
-        rfc = LogisticRegression()
-        rfc = GradientBoostingClassifier()
-        rfc.fit(X_train_attr01, y_train_attr01)
-        Y_pred = rfc.predict(X_test_attr0)
-        tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_test_attr0, y_pred=Y_pred, labels=[0, 1]).ravel()
-        rate_fn_attr0 = fn0 / (fn0 + tp0)
-        print(tn0, fp0, fn0, tp0)
+        for eps in self.list_eps:
+            res = red.expgrad(dataX=pd.DataFrame(np.delete(X_train, 0, 1)), dataA=X_train_protected, dataY=y_train,
+                              learner=LogisticRegression(),
+                              cons=moments.EO(), eps=eps)._asdict()
 
-        Y_pred = rfc.predict(X_test_attr1)
-        tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_test_attr1, y_pred=Y_pred, labels=[0, 1]).ravel()
-        rate_fn_attr1 = fn1 / (fn1 + tp1)
-        print(tn1, fp1, fn1, tp1)
+            # Split the unadjusted train and test data
+            X_train_g0, X_test_g0, y_train_g0, y_test_g0 = self.split_train_test_data(self.data_x_g0, self.data_y_g0)
+            X_train_g1, X_test_g1, y_train_g1, y_test_g1 = self.split_train_test_data(self.data_x_g1, self.data_y_g1)
+            X_train_g01, X_test_g01, y_train_g01, y_test_g01 = self.split_train_test_data(np.array(self.data_x_g0 + self.data_x_g1),
+                                                                                          np.array(self.data_y_g0 + self.data_y_g1))
 
-        disparity_train = abs(rate_fn_attr1 - rate_fn_attr0)
-        print("Random Forests ..")
-        print(rate_fn_attr0, rate_fn_attr1, disparity_train)
+            clf_cnt = 0
+            classifiers, weights = res['classifiers'], res['weights'].tolist()
+            error_train, rate_fn_g0, rate_fn_g1 = 0, 0, 0
 
-        clf_cnt = 0
-        for clf in res['classifiers']:
-            clf_cnt += 1
+            for idx in range(len(classifiers)):
+                clf = classifiers[idx]
+                w = weights[idx]
+                clf_cnt += 1
 
-            # # results of training data
-            # y_pred_attr0 = clf.predict(X_train_attr0)
-            # tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_train_attr0.values, y_pred=y_pred_attr0, labels=[0, 1]).ravel()
-            # y_pred_attr1 = clf.predict(X_train_attr1)
-            # # print(y_train_attr1.values)
-            # # print(y_pred_attr1)
-            # tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_train_attr1.values, y_pred=y_pred_attr1, labels=[0, 1]).ravel()
-            #
-            # print(tn0, fp0, fn0, tp0)
-            # print(tn1, fp1, fn1, tp1)
-            #
-            # rate_fn_attr0 = fn0 / (fn0 + tp0)
-            # rate_fn_attr1 = fn1 / (fn1 + tp1)
-            # disparity_train = abs(rate_fn_attr0 - rate_fn_attr1)
-            # print("disparity {}, fn_0 {}, fn_1 {}".format(disparity_train, rate_fn_attr0, rate_fn_attr1))
-            # acc_train = (tp0 + tn0 + tp1 + tn1) / (tn0 + fp0 + fn0 + tp0 + tn1 + fp1 + fn1 + tp1)
-            # error_train = (fp0 + fn0 + fp1 + fn1) / (tn0 + fp0 + fn0 + tp0 + tn1 + fp1 + fn1 + tp1)
-            #
-            # # results of test data
-            # y_pred_attr0 = clf.predict(X_test_attr0)
-            # tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_test_attr0.values, y_pred=y_pred_attr0, labels=[0,1]).ravel()
-            #
-            # y_pred_attr1 = clf.predict(X_test_attr1)
-            # tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_test_attr1.values, y_pred=y_pred_attr1, labels=[0,1]).ravel()
-            #
-            # rate_fn_attr0 = fn0 / (fn0 + tp0)
-            # rate_fn_attr1 = fn1 / (fn1 + tp1)
-            # disparity_test = abs(rate_fn_attr0 - rate_fn_attr1)
-            # print("disparity {}, fn_0 {}, fn_1 {}".format(disparity_test, rate_fn_attr0, rate_fn_attr1))
-            # acc_test = (tp0 + tn0 + tp1 + tn1) / (tn0 + fp0 + fn0 + tp0 + tn1 + fp1 + fn1 + tp1)
-            # error_test = (fp0 + fn0 + fp1 + fn1) / (tn0 + fp0 + fn0 + tp0 + tn1 + fp1 + fn1 + tp1)
+                Y_pred = clf.predict(X_train_g0)
+                tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_train_g0, y_pred=Y_pred, labels=[0, 1]).ravel()
+                rate_fn_g0 += w * fn0 / (fn0 + tp0)
 
-            # print("{},{},{}".format(clf_cnt, disparity_train, acc_train), file=f_output_train)
-            # print("{},{},{}".format(clf_cnt, disparity_test, acc_test), file=f_output_test)
-            # print("{},{},{}".format(clf_cnt, disparity_train, error_train), file=f_output_train)
-            # print("{},{},{}".format(clf_cnt, disparity_test, error_test), file=f_output_test)
+                Y_pred = clf.predict(X_train_g1)
+                tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_train_g1, y_pred=Y_pred, labels=[0, 1]).ravel()
+                rate_fn_g1 += w * fn1 / (fn1 + tp1)
 
-            ################################################################################
-            # use the complete data for group attr0 and attr1
+                Y_pred = clf.predict(X_train_g01)
+                tn01, fp01, fn01, tp01 = confusion_matrix(y_true=y_train_g01, y_pred=Y_pred, labels=[0, 1]).ravel()
+                error_train += w * (fp01 + fn01) / (fp01 + fn01 + tp01 + tn01)
 
-            Y_pred = clf.predict(X_train_attr0)
-            tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_train_attr0, y_pred=Y_pred, labels=[0, 1]).ravel()
-            rate_fn_attr0 = fn0 / (fn0 + tp0)
-
-            Y_pred = clf.predict(X_train_attr1)
-            tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_train_attr1, y_pred=Y_pred, labels=[0, 1]).ravel()
-            rate_fn_attr1 = fn1 / (fn1 + tp1)
-
-            disparity_train = abs(rate_fn_attr1 - rate_fn_attr0)
-
-            Y_pred = clf.predict(X_train_attr01)
-            tn01, fp01, fn01, tp01 = confusion_matrix(y_true=y_train_attr01, y_pred=Y_pred, labels=[0, 1]).ravel()
-            rate_fn_attr01 = fn01 / (fn01 + tp01)
-
-            error_train = (fp01 + fn01) / (fp01 + fn01 + tp01 + tn01)
-
-            print("{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(rate_fn_attr0, rate_fn_attr1, disparity_train, error_train))
-
-            # print("{},{},{}".format(clf_cnt, disparity_train, acc_train), file=f_output_train)
-            print("{},{},{}".format(clf_cnt, disparity_train, error_train), file=f_output_train)
-
-            Y_pred = clf.predict(X_test_attr0)
-            tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_test_attr0, y_pred=Y_pred, labels=[0, 1]).ravel()
-            rate_fn_attr0 = fn0 / (fn0 + tp0)
-
-            Y_pred = clf.predict(X_test_attr1)
-            tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_test_attr1, y_pred=Y_pred, labels=[0, 1]).ravel()
-            rate_fn_attr1 = fn1 / (fn1 + tp1)
-
-            disparity_test = abs(rate_fn_attr1 - rate_fn_attr0)
-
-            Y_pred = clf.predict(X_test_attr01)
-            tn01, fp01, fn01, tp01 = confusion_matrix(y_true=y_test_attr01, y_pred=Y_pred, labels=[0, 1]).ravel()
-            rate_fn_attr01 = fn01 / (fn01 + tp01)
-
-            error_test = (fp01 + fn01) / (fp01 + fn01 + tp01 + tn01)
-
-            # print("{},{},{}".format(clf_cnt, disparity_train, acc_train), file=f_output_train)
-            print("{},{},{}".format(clf_cnt, disparity_test, error_test), file=f_output_test)
+            disparity_train = abs(rate_fn_g0 - rate_fn_g1)
+            print("{:.5f}\t{:.5f}\t{:.5f}".format(eps, disparity_train, error_train))
+            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
 
 
     def run_cross_validation(self):
@@ -294,11 +196,11 @@ class PredictionFairness:
         clf_cnt = 0
         f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
 
-        for train_idx, test_idx in cv.KFold(len(self.data_x), n_folds=self.n_folds):
+        for train_idx, test_idx in cv.KFold(len(self.data_adjusted_x), n_folds=self.n_folds):
             it += 1
             print("Working on Iteration {} ..".format(it))
 
-            X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
+            X_train, X_test = self.data_adjusted_x[train_idx], self.data_adjusted_x[test_idx]
             Y_train, Y_test = self.data_y[train_idx], self.data_y[test_idx]
             X_train_protected, X_test_protected = self.data_x_protected[train_idx], self.data_x_protected[test_idx]
 
@@ -311,10 +213,10 @@ class PredictionFairness:
 
                 # fn for class 1
                 rate_fn_attr1 = 0
-                data_x_attr1 = np.array(self.data_x_attr1)
+                data_x_attr1 = np.array(self.data_x_g1)
                 data_x_attr1 = np.delete(data_x_attr1, 0, 1)
-                data_y_attr1 = np.array(self.data_y_attr1)
-                for train_idx, test_idx in cv.KFold(len(self.data_x_attr1), n_folds=self.n_folds):
+                data_y_attr1 = np.array(self.data_y_g1)
+                for train_idx, test_idx in cv.KFold(len(self.data_x_g1), n_folds=self.n_folds):
                     X_train, X_test = data_x_attr1[train_idx], data_x_attr1[test_idx]
                     Y_train, Y_test = data_y_attr1[train_idx], data_y_attr1[test_idx]
 
@@ -339,9 +241,9 @@ class PredictionFairness:
 
                 # accuracy of two classes
                 accuracy = 0
-                data_x = np.array(self.data_x_attr1 + self.data_x_attr2)
+                data_x = np.array(self.data_x_g1 + self.data_x_attr2)
                 data_x = np.delete(data_x, 0, 1)
-                data_y = np.array(self.data_y_attr1 + self.data_y_attr2)
+                data_y = np.array(self.data_y_g1 + self.data_y_attr2)
                 for train_idx, test_idx in cv.KFold(len(data_x), n_folds=self.n_folds):
                     X_train, X_test = data_x[train_idx], data_x[test_idx]
                     Y_train, Y_test = data_y[train_idx], data_y[test_idx]
@@ -362,7 +264,7 @@ class PredictionFairness:
         x = []
         y = []
         d = {}
-        for line in open("{}_{}_test.csv".format(self.plot_output, self.label_type), 'r'):
+        for line in open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'r'):
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
             accuracy = float(accuracy)
@@ -395,17 +297,18 @@ class PredictionFairness:
             print("Invalid prediction label ..")
             return
 
-        plt.plot(x, y, marker='o')
+        # plt.plot(x, y, marker='o')
+        plt.scatter(x, y, marker='o')
         plt.show()
 
 
 def main():
     runner = PredictionFairness()
-    # runner.load_data()
-    # runner.data_reformulation()
+    runner.load_data()
+    runner.data_reformulation()
     # runner.run_cross_validation()
-    # runner.run_train_test_split()
-    runner.plot_charts()
+    runner.run_train_test_split()
+    # runner.plot_charts()
 
 if __name__ == '__main__':
     main()
