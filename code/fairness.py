@@ -1,5 +1,6 @@
 from file_reader import FileReader
 
+import sys
 from sklearn.preprocessing import scale
 from sklearn.metrics import confusion_matrix
 import numpy as np
@@ -21,15 +22,15 @@ __author__ = 'bobo'
 
 class PredictionFairness:
 
-    def __init__(self):
+    def __init__(self, EO):
         self.decimal = 3
         self.n_folds = 1
         self.N = 19412
         self.eps = 0.100
         # TODO: denser for smaller values
-        self.list_eps = [0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.2, 0.4, 0.6, 0.8, 1]
+        self.list_eps = [0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
 
-        self.data_adjusted_x = None
+        self.data_x = None
         self.data_y = None
         self.data_x_protected = None
         self.data_y_badfaith = None
@@ -41,6 +42,9 @@ class PredictionFairness:
 
         self.label_type = 'quality'
         self.plot_output = 'dataset/plot_data_fairness'
+        self.EO = EO
+
+        self.load_data()
 
     def load_data(self):
         reader = FileReader()
@@ -48,7 +52,7 @@ class PredictionFairness:
 
         # TODO: no rescaling on boolean variables..
         # self.data_x = self.data_rescale(reader.data_x)
-        self.data_adjusted_x = reader.data_x
+        self.data_x = reader.data_x
         self.data_y_damaging = reader.data_y_damaging
         self.data_y_badfaith = reader.data_y_badfaith
 
@@ -63,26 +67,8 @@ class PredictionFairness:
     # registered, damaging: 270; registered, good: 15654
     def data_reformulation(self):
 
-        # create two sets of data
-        # todo: this is equalizing FP rates ...
-
-        # Recall that to equalize FP across means that
-        # #Pr[y-hat = 1| y = 0, a = 1] = Pr[y-hat = 1| y = 0, a = 0]
-        # where y-hat denotes the prediction and a denotes the group membership.
-        #
-        # So you want the algorithm to ignore the constraint of equalizing FN rates:
-        # Pr[y-hat = 0| y = 1, a = 1] = Pr[y-hat = 0 | y = 1, a = 0]
-        #
-        # To do that you can make all the positive examples with y=1 belong to the same group (say set all of them to have a = 0).
-
-        # Case 1: equalize FN rates:
-        # Make all the positive examples with y=1 belong to the same group (say set all of them to have a = 0)
-        data_x = []
-        data_y = []
-        cnt_anon_pos = 0
-        cnt_anon_neg = 0
-        cnt_reg_pos = 0
-        cnt_reg_neg = 0
+        data_adjusted_x, data_adjusted_y = [], []
+        cnt_anon_pos, cnt_anon_neg, cnt_reg_pos, cnt_reg_neg = 0, 0, 0, 0
 
         if self.label_type == 'quality':
             self.data_y = self.data_y_damaging
@@ -91,54 +77,81 @@ class PredictionFairness:
         else:
             return
 
-        for i in range(len(self.data_adjusted_x)):
+        for i in range(len(self.data_x)):
 
-            if self.data_y[i] == 1 and self.data_adjusted_x[i][0] == 1:
+            if self.data_y[i] == 1 and self.data_x[i][0] == 1:
                 cnt_anon_pos += 1
-            if self.data_y[i] == 0 and self.data_adjusted_x[i][0] == 1:
+            if self.data_y[i] == 0 and self.data_x[i][0] == 1:
                 cnt_anon_neg += 1
-            if self.data_y[i] == 1 and self.data_adjusted_x[i][0] == 0:
+            if self.data_y[i] == 1 and self.data_x[i][0] == 0:
                 cnt_reg_pos += 1
-            if self.data_y[i] == 0 and self.data_adjusted_x[i][0] == 0:
+            if self.data_y[i] == 0 and self.data_x[i][0] == 0:
                 cnt_reg_neg += 1
 
-            # TODO: what's the best way of doing this data adjustment?
-            # Make all the positive examples with y=1 belong to the same group (a = 1)
-            if self.data_y[i] == 1 and self.data_adjusted_x[i][0] == 1:
-                data_x.append(self.data_adjusted_x[i])
-                data_y.append(self.data_y[i])
+            if self.EO == 'FPR':
+                # Case 1: equalize FP rates
+                # Make all the positive examples with y=1 belong to the same group (a = 1)
+                if self.data_y[i] == 1 and self.data_x[i][0] == 1:
+                    data_adjusted_x.append(self.data_x[i])
+                    data_adjusted_y.append(self.data_y[i])
+                if self.data_y[i] == 0:
+                    data_adjusted_x.append(self.data_x[i])
+                    data_adjusted_y.append(self.data_y[i])
 
-            # Collect data for two attributes
-            if self.data_adjusted_x[i][0] == 0:
-                data_x.append(self.data_adjusted_x[i])
-                data_y.append(self.data_y[i])
+            elif self.EO == 'FNR':
+                # Case 2: equalize FN rates
+                # Make all the negative examples with y=0 belong to the same group (a = 1)
+                if self.data_y[i] == 0 and self.data_x[i][0] == 1:
+                    data_adjusted_x.append(self.data_x[i])
+                    data_adjusted_y.append(self.data_y[i])
+                if self.data_y[i] == 1:
+                    data_adjusted_x.append(self.data_x[i])
+                    data_adjusted_y.append(self.data_y[i])
 
-                self.data_x_g0.append(self.data_adjusted_x[i])
+            elif self.EO == 'BOTH':
+                # Case 3: equalize both FP and FN rates
+                data_adjusted_x.append(self.data_x[i])
+                data_adjusted_y.append(self.data_y[i])
+
+            # Collect data for two groups
+            if self.data_x[i][0] == 0:
+                self.data_x_g0.append(self.data_x[i])
                 self.data_y_g0.append(self.data_y[i])
 
-            if self.data_adjusted_x[i][0] == 1:
-                self.data_x_g1.append(self.data_adjusted_x[i])
+            if self.data_x[i][0] == 1:
+                self.data_x_g1.append(self.data_x[i])
                 self.data_y_g1.append(self.data_y[i])
 
-        # TODO: add sanity check on the adjusted datasets...
+        # Adjusted data
+        self.data_x = np.array(data_adjusted_x)
+        self.data_y = pd.Series(data_adjusted_y)
 
-        self.data_adjusted_x = np.array(data_x)
-        self.data_y = pd.Series(data_y)
+        self.data_sanity_check(self.data_x, self.data_y)
 
         print("Attr 0 (registered): {}, Attr 1: {} (unregistered).".format(cnt_reg_pos + cnt_reg_neg,
                                                                            cnt_anon_pos + cnt_anon_neg))
         print("{}+{}, {}+{}".format(cnt_reg_pos, cnt_reg_neg, cnt_anon_pos, cnt_anon_neg))
 
-
         # extract the column of the protected attribute (convert to string ..)
-        self.data_x_protected = pd.Series(self.data_adjusted_x[:, [0]].tolist()).apply(str)
+        self.data_x_protected = pd.Series(self.data_x[:, [0]].tolist()).apply(str)
         # delete the column of the protected attribute
         # self.data_x = np.delete(self.data_x, 0, 1)
 
-        # todo: case 2: equalize FP rates
-        # todo: make all the negative examples (y=0) in the same group (set all of them to have a = 0 again)
-
-        # todo: case 3: unadjusted dataset ...
+    @staticmethod
+    def data_sanity_check(data_x, data_y):
+        cnt_pos_g0, cnt_pos_g1, cnt_neg_g0, cnt_neg_g1 = 0, 0, 0, 0
+        for idx in range(len(data_x)):
+            if data_y[idx] == 1:
+                if data_x[idx][0] == 0:
+                    cnt_pos_g0 += 1
+                else:
+                    cnt_pos_g1 += 1
+            else:
+                if data_x[idx][0] == 0:
+                    cnt_neg_g0 += 1
+                else:
+                    cnt_neg_g1 += 1
+        print("pos g0: {}, pos g1: {}, neg g0: {}, neg g1: {}".format(cnt_pos_g0, cnt_pos_g1, cnt_neg_g0, cnt_neg_g1))
 
     @staticmethod
     def split_train_test_data(data_x, data_y):
@@ -154,15 +167,17 @@ class PredictionFairness:
         y_train, y_test = data_y[train_idx], data_y[test_idx]
         return X_train, X_test, y_train, y_test
 
-    def collect_classifiers(self):
+    @staticmethod
+    def collect_classifiers():
         return [LogisticRegression(), RandomForestClassifier(), GradientBoostingClassifier()]
 
     def run_train_test_split(self):
-        indices = np.arange(len(self.data_adjusted_x))
-        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(self.data_adjusted_x, self.data_y, indices,
+        # Train the model using adjusted data
+        indices = np.arange(len(self.data_x))
+        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(self.data_x, self.data_y, indices,
                                                                                  test_size=0.7, random_state=12)
 
-        X_train, X_test = self.data_adjusted_x[train_idx], self.data_adjusted_x[test_idx]
+        X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
         y_train, y_test = self.data_y[train_idx], self.data_y[test_idx]
         X_train_protected, X_test_protected = self.data_x_protected[train_idx], self.data_x_protected[test_idx]
 
@@ -174,15 +189,15 @@ class PredictionFairness:
                               learner=LogisticRegression(),
                               cons=moments.EO(), eps=eps)._asdict()
 
-            # Split the unadjusted train and test data
+            # Create the plots using unadjusted train and test data
             X_train_g0, X_test_g0, y_train_g0, y_test_g0 = self.split_train_test_data(self.data_x_g0, self.data_y_g0)
             X_train_g1, X_test_g1, y_train_g1, y_test_g1 = self.split_train_test_data(self.data_x_g1, self.data_y_g1)
             X_train_g01, X_test_g01, y_train_g01, y_test_g01 = self.split_train_test_data(np.array(self.data_x_g0 + self.data_x_g1),
                                                                                           np.array(self.data_y_g0 + self.data_y_g1))
-
+            # TODO: compute false negative rates by individual points ...
             clf_cnt = 0
             classifiers, weights = res['classifiers'], res['weights'].tolist()
-            error_train, rate_fn_g0, rate_fn_g1 = 0, 0, 0
+            error_train, rate_fn_g0, rate_fn_g1, rate_fp_g0, rate_fp_g1 = 0, 0, 0, 0, 0
 
             for idx in range(len(classifiers)):
                 clf = classifiers[idx]
@@ -192,19 +207,28 @@ class PredictionFairness:
                 Y_pred = clf.predict(X_train_g0)
                 tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_train_g0, y_pred=Y_pred, labels=[0, 1]).ravel()
                 rate_fn_g0 += w * fn0 / (fn0 + tp0)
+                rate_fp_g0 += w * fp0 / (fp0 + tn0)
 
                 Y_pred = clf.predict(X_train_g1)
                 tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_train_g1, y_pred=Y_pred, labels=[0, 1]).ravel()
                 rate_fn_g1 += w * fn1 / (fn1 + tp1)
+                rate_fp_g1 += w * fp1 / (fp1 + tn1)
 
                 Y_pred = clf.predict(X_train_g01)
                 tn01, fp01, fn01, tp01 = confusion_matrix(y_true=y_train_g01, y_pred=Y_pred, labels=[0, 1]).ravel()
                 error_train += w * (fp01 + fn01) / (fp01 + fn01 + tp01 + tn01)
 
-            disparity_train = abs(rate_fn_g0 - rate_fn_g1)
-            print("{:.5f}\t{:.5f}\t{:.5f}".format(eps, disparity_train, error_train))
-            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+            if self.EO == 'FPR':
+                disparity_train = abs(rate_fp_g0 - rate_fp_g1)
+            elif self.EO == 'FNR':
+                disparity_train = abs(rate_fn_g0 - rate_fn_g1)
+            elif self.EO == 'BOTH':
+                disparity_train = abs(rate_fp_g0 - rate_fp_g1) + abs(rate_fn_g0 - rate_fn_g1)
 
+            print("{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(eps, rate_fp_g0, rate_fp_g1,
+                                                                                  rate_fn_g0, rate_fn_g1,
+                                                                                  disparity_train, error_train))
+            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
 
     def run_cross_validation(self):
 
@@ -212,11 +236,11 @@ class PredictionFairness:
         clf_cnt = 0
         f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
 
-        for train_idx, test_idx in cv.KFold(len(self.data_adjusted_x), n_folds=self.n_folds):
+        for train_idx, test_idx in cv.KFold(len(self.data_x), n_folds=self.n_folds):
             it += 1
             print("Working on Iteration {} ..".format(it))
 
-            X_train, X_test = self.data_adjusted_x[train_idx], self.data_adjusted_x[test_idx]
+            X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
             Y_train, Y_test = self.data_y[train_idx], self.data_y[test_idx]
             X_train_protected, X_test_protected = self.data_x_protected[train_idx], self.data_x_protected[test_idx]
 
@@ -277,6 +301,7 @@ class PredictionFairness:
                                         accuracy / self.n_folds), file=f_output)
 
     def plot_charts(self):
+        # TODO: check plotting correctness ...
         x = []
         y = []
         d = {}
@@ -319,12 +344,11 @@ class PredictionFairness:
 
 
 def main():
-    runner = PredictionFairness()
-    runner.load_data()
+    runner = PredictionFairness(sys.argv[1])
     runner.data_reformulation()
     # runner.run_cross_validation()
     runner.run_train_test_split()
-    # runner.plot_charts()
+    runner.plot_charts()
 
 if __name__ == '__main__':
     main()
