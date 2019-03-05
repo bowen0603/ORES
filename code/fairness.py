@@ -26,6 +26,7 @@ class PredictionFairness:
         self.n_folds = 1
         self.N = 19412
         self.eps = 0.100
+        # TODO: denser for smaller values
         self.list_eps = [0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.2, 0.4, 0.6, 0.8, 1]
 
         self.data_adjusted_x = None
@@ -63,6 +64,16 @@ class PredictionFairness:
     def data_reformulation(self):
 
         # create two sets of data
+        # todo: this is equalizing FP rates ...
+
+        # Recall that to equalize FP across means that
+        # #Pr[y-hat = 1| y = 0, a = 1] = Pr[y-hat = 1| y = 0, a = 0]
+        # where y-hat denotes the prediction and a denotes the group membership.
+        #
+        # So you want the algorithm to ignore the constraint of equalizing FN rates:
+        # Pr[y-hat = 0| y = 1, a = 1] = Pr[y-hat = 0 | y = 1, a = 0]
+        #
+        # To do that you can make all the positive examples with y=1 belong to the same group (say set all of them to have a = 0).
 
         # Case 1: equalize FN rates:
         # Make all the positive examples with y=1 belong to the same group (say set all of them to have a = 0)
@@ -91,6 +102,7 @@ class PredictionFairness:
             if self.data_y[i] == 0 and self.data_adjusted_x[i][0] == 0:
                 cnt_reg_neg += 1
 
+            # TODO: what's the best way of doing this data adjustment?
             # Make all the positive examples with y=1 belong to the same group (a = 1)
             if self.data_y[i] == 1 and self.data_adjusted_x[i][0] == 1:
                 data_x.append(self.data_adjusted_x[i])
@@ -108,6 +120,8 @@ class PredictionFairness:
                 self.data_x_g1.append(self.data_adjusted_x[i])
                 self.data_y_g1.append(self.data_y[i])
 
+        # TODO: add sanity check on the adjusted datasets...
+
         self.data_adjusted_x = np.array(data_x)
         self.data_y = pd.Series(data_y)
 
@@ -121,8 +135,10 @@ class PredictionFairness:
         # delete the column of the protected attribute
         # self.data_x = np.delete(self.data_x, 0, 1)
 
-        # case 2: equalize FP rates
+        # todo: case 2: equalize FP rates
         # todo: make all the negative examples (y=0) in the same group (set all of them to have a = 0 again)
+
+        # todo: case 3: unadjusted dataset ...
 
     @staticmethod
     def split_train_test_data(data_x, data_y):

@@ -224,6 +224,8 @@ class AccuracyTradeOffs:
         # Six polar axes
         f, axarr = plt.subplots(2, 3)
 
+        # TODO: double check the value-param mapping
+
         axarr[0, 0].plot(l_fp_badfaith, l_fn_badfaith, marker='o')
         axarr[0, 0].set_title('Motivation Protection (x) V.S. \nCounter-Vandalism (y)')
 
