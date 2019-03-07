@@ -160,6 +160,7 @@ class PredictionFairness:
         data_x = np.array(data_x)
         data_x = np.delete(data_x, 0, 1)
         data_y = np.array(data_y)
+        # todo: check if it returns the same idx in each call ..
         X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(data_x, data_y,
                                                                                  indices,
                                                                                  test_size=0.7, random_state=12)
@@ -171,7 +172,44 @@ class PredictionFairness:
     def collect_classifiers():
         return [LogisticRegression(), RandomForestClassifier(), GradientBoostingClassifier()]
 
-    def run_train_test_split(self):
+    def run_train_test_split_baseline(self):
+
+        X_train_g0, X_test_g0, y_train_g0, y_test_g0 = self.split_train_test_data(self.data_x_g0, self.data_y_g0)
+        X_train_g1, X_test_g1, y_train_g1, y_test_g1 = self.split_train_test_data(self.data_x_g1, self.data_y_g1)
+        X_train_g01, X_test_g01, y_train_g01, y_test_g01 = self.split_train_test_data(
+            np.array(self.data_x_g0 + self.data_x_g1),
+            np.array(self.data_y_g0 + self.data_y_g1))
+
+        clf = LogisticRegression()
+        clf.fit(X_train_g01, y_train_g01)
+        thresholds = np.linspace(0, 1, 101, endpoint=True)
+
+        # Predict on the two groups
+        y_pred_prob_g0 = clf.predict_proba(X_test_g0)
+        y_pred_prob_g1 = clf.predict_proba(X_test_g1)
+
+        f_output_train = open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'w')
+
+        for threshold in thresholds:
+            list_y_pred_g0, list_y_pred_g1 = [], []
+            for score in y_pred_prob_g0:
+                list_y_pred_g0.append(1 if score[1] >= threshold else 0)
+            for score in y_pred_prob_g1:
+                list_y_pred_g1.append(1 if score[1] >= threshold else 0)
+
+            tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_test_g0, y_pred=list_y_pred_g0).ravel()
+            tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_test_g1, y_pred=list_y_pred_g1).ravel()
+
+            disparity_fpr = abs(fp0 / (fp0 + tn0) - fp1 / (fp1 + tn1))
+            disparity_fnr = abs(fn0 / (fn0 + tp0) - fn1 / (fn1 + tp1))
+            error_rate = (fp0 + fn0 + fp1 + fn1) / (tp0 + tn0 + fp0 + fn0 + tp1 + tn1 + fp1 + fn1)
+
+            print("{},{},{}".format(threshold, disparity_fpr, error_rate), file=f_output_train)
+            print("{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(threshold,
+                                                          disparity_fpr, disparity_fnr,
+                                                          error_rate))
+
+    def run_train_test_split_fairlearn(self):
         # Train the model using adjusted data
         indices = np.arange(len(self.data_x))
         X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(self.data_x, self.data_y, indices,
@@ -309,19 +347,21 @@ class PredictionFairness:
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
             accuracy = float(accuracy)
+            x.append(unfairness)
+            y.append(accuracy)
             if unfairness in d:
                 d[unfairness].append(accuracy)
             else:
                 d[unfairness] = [accuracy]
 
-        for key, val in d.items():
-            d[key] = sum(d[key]) / len(d[key])
-
-        for unfairness, accuracy in sorted(d.items(), key=operator.itemgetter(0)):  # sorted by unfairness
-            # y.append(unfairness)
-            # x.append(accuracy)
-            x.append(unfairness)
-            y.append(accuracy)
+        # for key, val in d.items():
+        #     d[key] = sum(d[key]) / len(d[key])
+        #
+        # for unfairness, accuracy in sorted(d.items(), key=operator.itemgetter(0)):  # sorted by unfairness
+        #     # y.append(unfairness)
+        #     # x.append(accuracy)
+        #     x.append(unfairness)
+        #     y.append(accuracy)
 
         if self.label_type == 'quality':
             # equalizing FN
@@ -347,7 +387,8 @@ def main():
     runner = PredictionFairness(sys.argv[1])
     runner.data_reformulation()
     # runner.run_cross_validation()
-    runner.run_train_test_split()
+    # runner.run_train_test_split_fairlearn()
+    runner.run_train_test_split_baseline()
     runner.plot_charts()
 
 if __name__ == '__main__':
