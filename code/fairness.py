@@ -114,6 +114,7 @@ class PredictionFairness:
                 data_adjusted_y.append(self.data_y[i])
 
             # Collect data for two groups
+            # TODO: sanity check on these two datasets ..
             if self.data_x[i][0] == 0:
                 self.data_x_g0.append(self.data_x[i])
                 self.data_y_g0.append(self.data_y[i])
@@ -294,6 +295,7 @@ class PredictionFairness:
                 data_x_attr1 = np.array(self.data_x_g1)
                 data_x_attr1 = np.delete(data_x_attr1, 0, 1)
                 data_y_attr1 = np.array(self.data_y_g1)
+                # todo: for each data point, w_i * proba => make sure it's fnr, divided by n??
                 for train_idx, test_idx in cv.KFold(len(self.data_x_g1), n_folds=self.n_folds):
                     X_train, X_test = data_x_attr1[train_idx], data_x_attr1[test_idx]
                     Y_train, Y_test = data_y_attr1[train_idx], data_y_attr1[test_idx]
@@ -353,7 +355,7 @@ class PredictionFairness:
                 d[unfairness].append(accuracy)
             else:
                 d[unfairness] = [accuracy]
-
+        # TODO: remove points whose disparity is greater than 0.5 to see details
         # for key, val in d.items():
         #     d[key] = sum(d[key]) / len(d[key])
         #
