@@ -238,6 +238,9 @@ class PredictionFairness:
             classifiers, weights = res['classifiers'], res['weights'].tolist()
             error_train, rate_fn_g0, rate_fn_g1, rate_fp_g0, rate_fp_g1 = 0, 0, 0, 0, 0
 
+            sum_fp = 0
+            sum_fn = 0
+
             for idx in range(len(classifiers)):
                 clf = classifiers[idx]
                 w = weights[idx]
@@ -257,6 +260,14 @@ class PredictionFairness:
                 tn01, fp01, fn01, tp01 = confusion_matrix(y_true=y_train_g01, y_pred=Y_pred, labels=[0, 1]).ravel()
                 error_train += w * (fp01 + fn01) / (fp01 + fn01 + tp01 + tn01)
 
+                # another way of computing FP rates
+
+                Y_pred = clf.predict(X_train_g0)
+                Y_pred = clf.predict_proba(X_train_g0)
+                for idx in range(len(Y_pred)):
+                    sum_fp += Y_pred[idx][1] * w
+                    sum_fn += Y_pred[idx][0] * w
+
             if self.EO == 'FPR':
                 disparity_train = abs(rate_fp_g0 - rate_fp_g1)
             elif self.EO == 'FNR':
@@ -268,6 +279,8 @@ class PredictionFairness:
                                                                                   rate_fn_g0, rate_fn_g1,
                                                                                   disparity_train, error_train))
             print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+            print(sum_fp, sum_fp / len(Y_pred))
+            print(sum_fn, sum_fn / len(Y_pred))
 
     def run_cross_validation(self):
 
@@ -389,8 +402,8 @@ def main():
     runner = PredictionFairness(sys.argv[1])
     runner.data_reformulation()
     # runner.run_cross_validation()
-    # runner.run_train_test_split_fairlearn()
-    runner.run_train_test_split_baseline()
+    runner.run_train_test_split_fairlearn()
+    # runner.run_train_test_split_baseline()
     runner.plot_charts()
 
 if __name__ == '__main__':
