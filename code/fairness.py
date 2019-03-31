@@ -1,4 +1,5 @@
 from file_reader import FileReader
+from adult import Adult
 
 import sys
 from sklearn.preprocessing import scale
@@ -28,7 +29,8 @@ class PredictionFairness:
         self.N = 19412
         self.eps = 0.100
         # TODO: denser for smaller values
-        self.list_eps = [0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
+        self.list_eps = [0.001, 0.025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
+                         0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
 
         self.data_x = None
         self.data_y = None
@@ -43,8 +45,6 @@ class PredictionFairness:
         self.label_type = 'quality'
         self.plot_output = 'dataset/plot_data_fairness'
         self.EO = EO
-
-        self.load_data()
 
     def load_data(self):
         reader = FileReader()
@@ -155,7 +155,7 @@ class PredictionFairness:
         print("pos g0: {}, pos g1: {}, neg g0: {}, neg g1: {}".format(cnt_pos_g0, cnt_pos_g1, cnt_neg_g0, cnt_neg_g1))
 
     @staticmethod
-    def split_train_test_data(data_x, data_y):
+    def split_train_test_data(data_x, data_y=None):
         indices = np.arange(len(data_x))
 
         data_x = np.array(data_x)
@@ -164,10 +164,10 @@ class PredictionFairness:
         # todo: check if it returns the same idx in each call ..
         X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(data_x, data_y,
                                                                                  indices,
-                                                                                 test_size=0.7, random_state=12)
+                                                                                 test_size=0.3, random_state=22)
         X_train, X_test = data_x[train_idx], data_x[test_idx]
         y_train, y_test = data_y[train_idx], data_y[test_idx]
-        return X_train, X_test, y_train, y_test
+        return X_train, X_test, y_train, y_test, train_idx
 
     @staticmethod
     def collect_classifiers():
@@ -175,9 +175,9 @@ class PredictionFairness:
 
     def run_train_test_split_baseline(self):
 
-        X_train_g0, X_test_g0, y_train_g0, y_test_g0 = self.split_train_test_data(self.data_x_g0, self.data_y_g0)
-        X_train_g1, X_test_g1, y_train_g1, y_test_g1 = self.split_train_test_data(self.data_x_g1, self.data_y_g1)
-        X_train_g01, X_test_g01, y_train_g01, y_test_g01 = self.split_train_test_data(
+        X_train_g0, X_test_g0, y_train_g0, y_test_g0, _ = self.split_train_test_data(self.data_x_g0, self.data_y_g0)
+        X_train_g1, X_test_g1, y_train_g1, y_test_g1, _ = self.split_train_test_data(self.data_x_g1, self.data_y_g1)
+        X_train_g01, X_test_g01, y_train_g01, y_test_g01, _ = self.split_train_test_data(
             np.array(self.data_x_g0 + self.data_x_g1),
             np.array(self.data_y_g0 + self.data_y_g1))
 
@@ -214,7 +214,7 @@ class PredictionFairness:
         # Train the model using adjusted data
         indices = np.arange(len(self.data_x))
         X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(self.data_x, self.data_y, indices,
-                                                                                 test_size=0.7, random_state=12)
+                                                                                 test_size=0.3, random_state=12)
 
         X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
         y_train, y_test = self.data_y[train_idx], self.data_y[test_idx]
@@ -225,20 +225,65 @@ class PredictionFairness:
 
         for eps in self.list_eps:
             res = red.expgrad(dataX=pd.DataFrame(np.delete(X_train, 0, 1)), dataA=X_train_protected, dataY=y_train,
-                              learner=LogisticRegression(),
-                              cons=moments.EO(), eps=eps)._asdict()
+                              # learner=LogisticRegression(),
+                              learner=RandomForestClassifier(),
+                              cons=moments.EO(), eps=eps)
 
             # Create the plots using unadjusted train and test data
-            X_train_g0, X_test_g0, y_train_g0, y_test_g0 = self.split_train_test_data(self.data_x_g0, self.data_y_g0)
-            X_train_g1, X_test_g1, y_train_g1, y_test_g1 = self.split_train_test_data(self.data_x_g1, self.data_y_g1)
-            X_train_g01, X_test_g01, y_train_g01, y_test_g01 = self.split_train_test_data(np.array(self.data_x_g0 + self.data_x_g1),
-                                                                                          np.array(self.data_y_g0 + self.data_y_g1))
+            X_train_g0, X_test_g0, y_train_g0, y_test_g0, indices = self.split_train_test_data(self.data_x_g0, self.data_y_g0)
+            X_train_g1, X_test_g1, y_train_g1, y_test_g1, indices = self.split_train_test_data(self.data_x_g1, self.data_y_g1)
+            X_train_g01, X_test_g01, y_train_g01, y_test_g01, indices = self.split_train_test_data(
+                np.array(self.data_x_g0 + self.data_x_g1),
+                np.array(self.data_y_g0 + self.data_y_g1))
+
+            # print(len(X_train_g01), len(X_train_g0), len(X_train_g1))
+            X_train_a = self.data_x_protected[indices]
+            weighted_preds_g0 = self.weighted_predictions(res, X_train_g0)
+            weighted_preds_g1 = self.weighted_predictions(res, X_train_g1)
+            weighted_preds_g01 = self.weighted_predictions(res, X_train_g01)
+            #
+            # tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_train_g0, y_pred=weighted_preds_g0, labels=[0, 1]).ravel()
+            # # tn0, fp0, fn0, tp0 = confusion_matrix(y_true=y_train_g0, y_pred=weighted_preds_g0).ravel()
+            # rate_fn_g0 = fn0 / (fn0 + tp0)
+            # rate_fp_g0 = fp0 / (fp0 + tn0)
+            # # print(tn0, fp0, fn0, tp0)
+            #
+            # tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_train_g1, y_pred=weighted_preds_g1, labels=[0, 1]).ravel()
+            # # tn1, fp1, fn1, tp1 = confusion_matrix(y_true=y_train_g1, y_pred=weighted_preds_g1).ravel()
+            #
+            # rate_fn_g1 = fn1 / (fn1 + tp1)
+            # rate_fp_g1 = fp1 / (fp1 + tn1)
+            # # print(tn1, fp1, fn1, tp1)
+            #
+            # tn01, fp01, fn01, tp01 = confusion_matrix(y_true=y_train_g01, y_pred=weighted_preds_g01, labels=[0, 1]).ravel()
+            # # tn01, fp01, fn01, tp01 = confusion_matrix(y_true=y_train_g01, y_pred=weighted_preds_g01).ravel()
+            # error_train = (fp01 + fn01) / (fp01 + fn01 + tp01 + tn01)
+            # disparity_train = abs(rate_fp_g1 - rate_fp_g0)
+            #
+            # print("{},{},{}".format(eps, disparity_train, error_train))
+            # print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+
+            # if True:
+            #     continue
+
+            # print(len(X_train_a), len(y_train_g01), len(weighted_preds_g01))
+            # print(np.count_nonzero(~np.isnan(X_train_a)))
+            disparity_train = self.compute_FP(X_train_a.to_frame(), y_train_g01, weighted_preds_g01)
+            error_train = self.compute_error(y_train_g01, weighted_preds_g01)
+            # print(eps, fp)  # 0.00022960355120159193
+            print("{},{},{}".format(eps, disparity_train, error_train))
+            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+
+            if True:
+                continue
+
+            # res = res._asdict()
             # TODO: compute false negative rates by individual points ...
             clf_cnt = 0
             classifiers, weights = res['classifiers'], res['weights'].tolist()
             error_train, rate_fn_g0, rate_fn_g1, rate_fp_g0, rate_fp_g1 = 0, 0, 0, 0, 0
 
-            sum_fp = 0
+            sum_fp_g0, sum_fp_g1 = 0, 0
             sum_fn = 0
 
             for idx in range(len(classifiers)):
@@ -262,10 +307,14 @@ class PredictionFairness:
 
                 # another way of computing FP rates
 
-                Y_pred = clf.predict(X_train_g0)
                 Y_pred = clf.predict_proba(X_train_g0)
                 for idx in range(len(Y_pred)):
-                    sum_fp += Y_pred[idx][1] * w
+                    sum_fp_g0 += Y_pred[idx][1] * w * (1 - y_train_g0[idx] - 1)
+                    sum_fn += Y_pred[idx][0] * w
+
+                Y_pred = clf.predict_proba(X_train_g1)
+                for idx in range(len(Y_pred)):
+                    sum_fp_g1 += Y_pred[idx][1] * w * (1 - y_train_g1[idx] - 1)
                     sum_fn += Y_pred[idx][0] * w
 
             if self.EO == 'FPR':
@@ -275,12 +324,74 @@ class PredictionFairness:
             elif self.EO == 'BOTH':
                 disparity_train = abs(rate_fp_g0 - rate_fp_g1) + abs(rate_fn_g0 - rate_fn_g1)
 
-            print("{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(eps, rate_fp_g0, rate_fp_g1,
-                                                                                  rate_fn_g0, rate_fn_g1,
-                                                                                  disparity_train, error_train))
-            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
-            print(sum_fp, sum_fp / len(Y_pred))
-            print(sum_fn, sum_fn / len(Y_pred))
+            # print("{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(eps, rate_fp_g0, rate_fp_g1,
+            #                                                                       rate_fn_g0, rate_fn_g1,
+            #                                                                       disparity_train, error_train))
+            # print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+            print("{},{},{}".format(eps, abs(sum_fp_g0 / len(X_train_g0) - sum_fp_g1 / len(X_train_g1)), error_train), file=f_output_train)
+            # print(sum_fp_g0, sum_fp_g0 / len(Y_pred))
+            # print(sum_fp_g1, sum_fp_g1 / len(Y_pred))
+            # print(abs(sum_fp_g0 - sum_fp_g1))
+            # print(sum_fn, sum_fn / len(Y_pred))
+
+    @staticmethod
+    def weighted_predictions(res_tuple, x):
+        """
+        Given res_tuple from expgrad, compute the weighted predictions
+        over the dataset x
+        """
+        hs = res_tuple.classifiers
+        weights = res_tuple.weights  # weights over classifiers
+        preds = hs.apply(lambda h: h.predict(x))  # predictions
+        # return weighted predictions
+        return weights.dot(preds)
+
+    @staticmethod
+    def compute_error(y, weighted_pred):
+        error = 0
+        for idx in range(len(weighted_pred)):
+            if y[idx] == 1:
+                error += 1 - weighted_pred[idx]
+            else:
+                error += weighted_pred[idx]
+        return error / len(weighted_pred)
+
+    @staticmethod
+    def compute_FP(a, y, weighted_pred):
+        """
+        Debug fn: compute FP disp given weighted_pred
+        assume a is already binarized
+        """
+        sens_attr = list(a.columns)
+        disp = {}
+
+        # for a_val in [0, 1]:
+        for a_val in ['Male', 'Female']:
+
+            a_c = a[0].values
+            # calculate Pr[ y-hat = 1 | y = 1 ]
+            p_all = np.average(weighted_pred[y == 0])
+            sum = 0
+            cnt = 0
+            cnt_nan = 0
+            for idx in range(len(weighted_pred)):
+                try:
+                    a_c_val = int(float(a_c[idx].replace('[', '').replace(']', '')))
+                except:
+                    cnt_nan += 1
+                    continue
+
+                if y[idx] == 0 & a_c_val == a_val:
+                    cnt += 1
+                    sum += weighted_pred[idx]
+            # print(cnt_nan)
+            # print(sum, cnt)
+            p_sub = 0.0
+            if cnt != 0:
+                p_sub = 1.0*sum / cnt
+
+            disp[a_val] = np.abs(p_all - p_sub)
+        return max(disp.values())
 
     def run_cross_validation(self):
 
@@ -358,7 +469,10 @@ class PredictionFairness:
         x = []
         y = []
         d = {}
-        for line in open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'r'):
+        # runner.plot_charts()
+        # f_output_train = open('dataset/plot_adult.csv', 'w')
+        # for line in open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'r'):
+        for line in open('dataset/plot_adult.csv', 'r'):
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
             accuracy = float(accuracy)
@@ -378,32 +492,87 @@ class PredictionFairness:
         #     x.append(unfairness)
         #     y.append(accuracy)
 
-        if self.label_type == 'quality':
-            # equalizing FN
-            plt.xlabel('Unfairness (Disparity of False Negative Rates/Quality Control)')
-            plt.ylabel('Prediction accuracy')
-            plt.title('Value Trade-off between Unfairness and Prediction Accuracy\n(Editing Quality)')
-        elif self.label_type == 'intention':
-            # equalizing FN
-            plt.ylabel('Unfairness (Disparity of False Negative Rates/Motivation Protection)')
-            plt.xlabel('Prediction accuracy')
-            plt.title('Value Trade-off between Unfairness and Prediction Accuracy\n(Editing Intention)')
-        else:
-            # TODO: equalizing FP rates
-            print("Invalid prediction label ..")
-            return
+        # if self.label_type == 'quality':
+        #     # equalizing FN
+        #     plt.xlabel('Unfairness (Disparity of False Negative Rates/Quality Control)')
+        #     plt.ylabel('Prediction accuracy')
+        #     plt.title('Value Trade-off between Unfairness and Prediction Accuracy\n(Editing Quality)')
+        # elif self.label_type == 'intention':
+        #     # equalizing FN
+        #     plt.ylabel('Unfairness (Disparity of False Negative Rates/Motivation Protection)')
+        #     plt.xlabel('Prediction accuracy')
+        #     plt.title('Value Trade-off between Unfairness and Prediction Accuracy\n(Editing Intention)')
+        # else:
+        #     # TODO: equalizing FP rates
+        #     print("Invalid prediction label ..")
+        #     return
 
+        plt.xlabel('Disparity')
+        plt.ylabel('Error Rate')
         # plt.plot(x, y, marker='o')
         plt.scatter(x, y, marker='o')
         plt.show()
 
+    def other_data(self):
+        adult = Adult()
+        train, test = adult.create_train_test()
+        print("data")
+
+        self.relevant = [
+            'marital-status',
+            'occupation',
+            'relationship',
+            'race',
+            'gender',
+            'over_25',
+            'age',
+            'education-num',
+            'capital-gain',
+            'capital-loss',
+            'hours-per-week',
+            'label']
+
+        features = ['marital-status',
+            'occupation',
+            'relationship',
+            'race',
+            'age',
+            'education-num',
+            'capital-gain',
+            'capital-loss',
+            'hours-per-week']
+
+        protected_attribute = ['gender']
+        label = ['label']
+
+        xx = train[features]
+        x = train[protected_attribute].T.squeeze()
+        f_output_train = open('dataset/plot_adult.csv', 'w')
+        for eps in self.list_eps:
+            res_tuple = red.expgrad(dataX=train[features], dataA=train[protected_attribute].T.squeeze(),
+                                    dataY=train[label].T.squeeze(),
+                                    learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
+            res = res_tuple._asdict()
+
+            weighted_preds = self.weighted_predictions(res, train[features].T.squeeze())
+            disparity_train = self.compute_FP(train[protected_attribute], train[label].T.squeeze(), weighted_preds)
+            error_train = self.compute_error(train[label], weighted_preds)
+
+            # print(eps, fp)  # 0.00022960355120159193
+            print("{},{},{}".format(eps, disparity_train, error_train))
+            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+
 
 def main():
     runner = PredictionFairness(sys.argv[1])
-    runner.data_reformulation()
+    # runner.load_data()
+    # runner.data_reformulation()
     # runner.run_cross_validation()
-    runner.run_train_test_split_fairlearn()
+    # runner.run_train_test_split_fairlearn()
     # runner.run_train_test_split_baseline()
+    # runner.plot_charts()
+
+    runner.other_data()
     runner.plot_charts()
 
 if __name__ == '__main__':

@@ -21,7 +21,7 @@ __author__ = 'bobo'
 class AccuracyTradeOffs:
 
     def __init__(self):
-        self.decimal = 3
+        self.decimal = 2
         self.n_folds = 5
         self.N = 19412
         self.threshold_density = 101  # 21, 41, 81, 101
@@ -171,6 +171,9 @@ class AccuracyTradeOffs:
             dict_rates_fp_badfaith[threshold] /= self.n_folds
             dict_rates_fn_badfaith[threshold] /= self.n_folds
 
+            dict_sensitivity_damaging[threshold] /= self.n_folds
+            dict_specificity_damaging[threshold] /= self.n_folds
+
             print("{},{:.5f},{:.5f},{:.5f},{:.5f}".format(threshold,
                                                           dict_rates_fp_damaging[threshold],
                                                           dict_rates_fn_damaging[threshold],
@@ -283,14 +286,57 @@ class AccuracyTradeOffs:
         f.subplots_adjust(hspace=0.3)
         plt.show()
 
+    def create_individual_visuals(self):
+
+        # threshold,idx,case
+        fout = open("dataset/individual_points.csv", 'w')
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(self.data_x, self.data_y_damaging,
+                                                            test_size=0.5, random_state=22)
+
+        clf = GradientBoostingClassifier(learning_rate=0.01, max_depth=7, max_features="sqrt", n_estimators=700)
+        clf.fit(X_train, y_train)
+        y_pred_prob = clf.predict_proba(X_test)
+
+        idx = 0
+        thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+        print(len(y_pred_prob))
+        cnt1 = 0
+        cnt2 = 0
+        for y_score in y_pred_prob:
+            if X_test[idx][0] == 0.0:
+                cnt1 += 1
+
+            if X_test[idx][0] == 1.0:
+                cnt2 += 1
+            for threshold in thresholds:
+                predicted_cls = 1 if y_score[1] >= threshold else 0
+                if predicted_cls == 1 and y_test[idx] == 1:
+                    case = 0  # tp
+                elif predicted_cls == 1 and y_test[idx] == 0:
+                    case = 1  # fp
+                elif predicted_cls == 0 and y_test[idx] == 1:
+                    case = 2  # fn
+                else:
+                    case = 3  # tn
+
+
+
+                threshold = str(round(threshold, self.decimal))
+                print("{},{},{},{}".format(idx, threshold, case, int(X_test[idx][0])), file=fout)
+            idx += 1
+
+        print(cnt1, cnt2)
+
+
 
 def main():
     runner = AccuracyTradeOffs()
     runner.load_data()
-    runner.run_cross_validation()
+    # runner.run_cross_validation()
     # runner.plot_charts()
-    runner.plot_all_pairs()
-
+    # runner.plot_all_pairs()
+    runner.create_individual_visuals()
 
 if __name__ == '__main__':
     main()
