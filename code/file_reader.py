@@ -4,6 +4,7 @@ import json
 import pickle
 import base64
 import numpy as np
+import pandas as pd
 
 
 class FileReader:
@@ -18,8 +19,10 @@ class FileReader:
         self.data_y_damaging = []
         self.data_rev_id = []
         self.data_protected_anon = []
+        self.data = []
+        self.df = None
 
-    def read_from_file(self):
+    def read_from_file_np(self):
         cnt_line = 0
         for line in open(self.filename, 'r'):
             cnt_line += 1
@@ -51,6 +54,47 @@ class FileReader:
         self.data_x = np.array(self.data_x)
         self.data_y_damaging = np.array(self.data_y_damaging)
         self.data_y_badfaith = np.array(self.data_y_badfaith)
+        my_df = pd.DataFrame(data=self.data_x)
+        print(my_df.shape)
+        list_col = [0, 1, 2, 3]
+        df1 = my_df[list_col]
+        print(df1.shape)
+        print(len(my_df))
+
+    def read_from_file(self):
+        cnt_line = 0
+        for line in open(self.filename, 'r'):
+            cnt_line += 1
+            data_obj = json.loads(line)
+            dict_features = pickle.loads(base64.b85decode(bytes(data_obj['cache'], 'ascii')))
+
+            vals = []
+            is_anon = 0
+            for key, val in dict_features.items():
+                if key == 'feature.revision.user.is_anon':
+                    is_anon = 1 if val is True else 0
+                    continue
+
+                if isinstance(val, bool):
+                    val = 1 if val is True else 0
+                vals.append(val)
+
+            # data structure: insert (label 1 (faith), label 2 (damaging), A, ...)
+            # insert protected feature is_anon at 0
+            vals.insert(0, is_anon)
+            vals.insert(0, 1 if data_obj['damaging'] is True else 0)
+            vals.insert(0, 0 if data_obj['goodfaith'] is True else 1)
+
+            self.data.append(vals)
+
+            if cnt_line % 1000 == 0:
+                print("{}k out of 19k lines processed..".format(cnt_line/1000, self.N))
+
+        self.data_x = np.array(self.data_x)
+        self.data_y_damaging = np.array(self.data_y_damaging)
+        self.data_y_badfaith = np.array(self.data_y_badfaith)
+        self.df = pd.DataFrame(data=self.data)
+        print(self.df.shape)
 
     def group_identifier(self):
         # revision id -> editor id -> editor page/info

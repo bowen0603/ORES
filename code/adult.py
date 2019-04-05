@@ -42,7 +42,7 @@ class Adult:
 
         self.positive_label = 1
         self.negative_label = 0
-        self.Predefined = True
+        self.Predefined = False
 
     def read_data(self, filename):
         data = pd.read_csv(filename, names=self.names, sep=r'\s*,\s*', engine='python', na_values='?')

@@ -41,6 +41,11 @@ class PredictionFairness:
         self.data_y_g0 = []
         self.data_x_g1 = []
         self.data_y_g1 = []
+        self.df = None
+        self.idx_label_damaging = [1]
+        self.idx_label_faith = [0]
+        self.idx_protected_attribute = [2]
+        self.idx_features = list(range(3, 82))
 
         self.label_type = 'quality'
         self.plot_output = 'dataset/plot_data_fairness'
@@ -55,6 +60,7 @@ class PredictionFairness:
         self.data_x = reader.data_x
         self.data_y_damaging = reader.data_y_damaging
         self.data_y_badfaith = reader.data_y_badfaith
+        self.df = reader.df
 
     def retrieve_editor_info(self):
         pass
@@ -349,6 +355,8 @@ class PredictionFairness:
     @staticmethod
     def compute_error(y, weighted_pred):
         error = 0
+        y = y.values
+        # print(len(y), len(weighted_pred))
         for idx in range(len(weighted_pred)):
             if y[idx] == 1:
                 error += 1 - weighted_pred[idx]
@@ -358,17 +366,36 @@ class PredictionFairness:
 
     @staticmethod
     def compute_FP(a, y, weighted_pred):
+        # sens_attr = list(a.columns)
+        disp = {}
+        # for c in sens_attr:
+        for a_val in [0, 1]:
+            # a_c = a[0]
+            a_c = a
+            # calculate Pr[ y-hat = 1 | y = 1 ]
+            p_all = np.average(weighted_pred[y == 0])
+
+            if len(weighted_pred[(y == 0) & (a_c == a_val)]) > 0:
+                # calculate Pr[ y-hat = 1 | y = 1, a=1]
+                p_sub = np.average(weighted_pred[(y == 0) & (a_c == a_val)])
+                disp[(0, a_val)] = np.abs(p_all - p_sub)
+        return max(disp.values())
+
+
+    @staticmethod
+    def compute_FP2(a, y, weighted_pred):
         """
         Debug fn: compute FP disp given weighted_pred
         assume a is already binarized
         """
-        sens_attr = list(a.columns)
+        # sens_attr = list(a.columns)
         disp = {}
 
-        # for a_val in [0, 1]:
-        for a_val in ['Male', 'Female']:
+        for a_val in [0, 1]:
+        # for a_val in ['Male', 'Female']:
 
-            a_c = a[0].values
+            a_c = a[0]
+            # a_c = a[0].values
             # calculate Pr[ y-hat = 1 | y = 1 ]
             p_all = np.average(weighted_pred[y == 0])
             sum = 0
@@ -515,8 +542,19 @@ class PredictionFairness:
 
     def other_data(self):
         adult = Adult()
+
         train, test = adult.create_train_test()
-        print("data")
+        train['race'] = train['race'].astype('category').cat.codes
+        train['marital-status'] = train['marital-status'].astype('category').cat.codes
+        train['relationship'] = train['relationship'].astype('category').cat.codes
+        train['occupation'] = train['occupation'].astype('category').cat.codes
+        train['gender'] = train['gender'].astype('category').cat.codes
+
+        test['race'] = test['race'].astype('category').cat.codes
+        test['marital-status'] = test['marital-status'].astype('category').cat.codes
+        test['relationship'] = test['relationship'].astype('category').cat.codes
+        test['occupation'] = test['occupation'].astype('category').cat.codes
+        test['gender'] = test['gender'].astype('category').cat.codes
 
         self.relevant = [
             'marital-status',
@@ -545,34 +583,56 @@ class PredictionFairness:
         protected_attribute = ['gender']
         label = ['label']
 
-        xx = train[features]
-        x = train[protected_attribute].T.squeeze()
+        train_full = train
+        # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
+        # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
+        train_adjusted = train
+
         f_output_train = open('dataset/plot_adult.csv', 'w')
         for eps in self.list_eps:
-            res_tuple = red.expgrad(dataX=train[features], dataA=train[protected_attribute].T.squeeze(),
-                                    dataY=train[label].T.squeeze(),
+            res = red.expgrad(dataX=train_adjusted[features], dataA=train_adjusted[protected_attribute].T.squeeze(),
+                                    dataY=train_adjusted[label].T.squeeze(),
                                     learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
-            res = res_tuple._asdict()
 
-            weighted_preds = self.weighted_predictions(res, train[features].T.squeeze())
-            disparity_train = self.compute_FP(train[protected_attribute], train[label].T.squeeze(), weighted_preds)
-            error_train = self.compute_error(train[label], weighted_preds)
+            weighted_preds = self.weighted_predictions(res, train_full[features])
+            disparity_train = self.compute_FP(train_full[protected_attribute].T.squeeze(), train_full[label].T.squeeze(), weighted_preds)
+            error_train = self.compute_error(train_full[label].T.squeeze(), weighted_preds)
 
-            # print(eps, fp)  # 0.00022960355120159193
             print("{},{},{}".format(eps, disparity_train, error_train))
             print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
 
+    def run_cross_validation_df(self):
+        # (1) split train & test data using np array
+        # (2) convert it to df for features
+        random_state = np.random.RandomState(12)
+        train_data, test_data = train_test_split(self.df, test_size=0.5, random_state=random_state)
+
+        f_output_train = open('dataset/plot_adult.csv', 'w')
+        for eps in self.list_eps:
+            res = red.expgrad(dataX=train_data[self.idx_features],
+                              dataA=train_data[self.idx_protected_attribute].T.squeeze(),
+                              dataY=train_data[self.idx_label_damaging].T.squeeze(),
+                              learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
+
+            weighted_preds = self.weighted_predictions(res, test_data[self.idx_features])
+            disparity_train = self.compute_FP(test_data[self.idx_protected_attribute].T.squeeze(),
+                                              test_data[self.idx_label_damaging].T.squeeze(), weighted_preds)
+            error_train = self.compute_error(test_data[self.idx_label_damaging].T.squeeze(), weighted_preds)
+
+            print("{},{},{}".format(eps, disparity_train, error_train))
+            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
 
 def main():
     runner = PredictionFairness(sys.argv[1])
-    # runner.load_data()
+    runner.load_data()
     # runner.data_reformulation()
     # runner.run_cross_validation()
     # runner.run_train_test_split_fairlearn()
     # runner.run_train_test_split_baseline()
     # runner.plot_charts()
 
-    runner.other_data()
+    # runner.other_data()
+    runner.run_cross_validation_df()
     runner.plot_charts()
 
 if __name__ == '__main__':
