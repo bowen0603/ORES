@@ -1,5 +1,8 @@
-from file_reader import FileReader
-from adult import Adult
+from parser_adult import Adult
+from parser_dutch import Dutch
+from parser_lawschool import Lawschool
+from parser_campus import Campus
+from parser_wiki import ParserWiki
 
 import sys
 from sklearn.preprocessing import scale
@@ -52,15 +55,15 @@ class PredictionFairness:
         self.EO = EO
 
     def load_data(self):
-        reader = FileReader()
-        reader.read_from_file()
+        reader = ParserWiki()
+        # reader.load_data()
+        self.df = reader.load_data()
 
         # TODO: no rescaling on boolean variables..
         # self.data_x = self.data_rescale(reader.data_x)
         self.data_x = reader.data_x
         self.data_y_damaging = reader.data_y_damaging
         self.data_y_badfaith = reader.data_y_badfaith
-        self.df = reader.df
 
     def retrieve_editor_info(self):
         pass
@@ -540,66 +543,29 @@ class PredictionFairness:
         plt.scatter(x, y, marker='o')
         plt.show()
 
-    def other_data(self):
-        adult = Adult()
+    def replicate_results(self):
 
-        train, test = adult.create_train_test()
-        train['race'] = train['race'].astype('category').cat.codes
-        train['marital-status'] = train['marital-status'].astype('category').cat.codes
-        train['relationship'] = train['relationship'].astype('category').cat.codes
-        train['occupation'] = train['occupation'].astype('category').cat.codes
-        train['gender'] = train['gender'].astype('category').cat.codes
+        for obj in [Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()]:
 
-        test['race'] = test['race'].astype('category').cat.codes
-        test['marital-status'] = test['marital-status'].astype('category').cat.codes
-        test['relationship'] = test['relationship'].astype('category').cat.codes
-        test['occupation'] = test['occupation'].astype('category').cat.codes
-        test['gender'] = test['gender'].astype('category').cat.codes
+            train, test, features, prot_attr, label = obj.create_data()
 
-        self.relevant = [
-            'marital-status',
-            'occupation',
-            'relationship',
-            'race',
-            'gender',
-            'over_25',
-            'age',
-            'education-num',
-            'capital-gain',
-            'capital-loss',
-            'hours-per-week',
-            'label']
+            train_full = train
+            # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
+            # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
+            train_adjusted = train
 
-        features = ['marital-status',
-            'occupation',
-            'relationship',
-            'race',
-            'age',
-            'education-num',
-            'capital-gain',
-            'capital-loss',
-            'hours-per-week']
+            f_output_train = open('dataset/plot_adult.csv', 'w')
+            for eps in self.list_eps:
+                res = red.expgrad(dataX=train_adjusted[features], dataA=train_adjusted[prot_attr].T.squeeze(),
+                                        dataY=train_adjusted[label].T.squeeze(),
+                                        learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
 
-        protected_attribute = ['gender']
-        label = ['label']
+                weighted_preds = self.weighted_predictions(res, train_full[features])
+                disparity_train = self.compute_FP(train_full[prot_attr].T.squeeze(), train_full[label].T.squeeze(), weighted_preds)
+                error_train = self.compute_error(train_full[label].T.squeeze(), weighted_preds)
 
-        train_full = train
-        # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
-        # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
-        train_adjusted = train
-
-        f_output_train = open('dataset/plot_adult.csv', 'w')
-        for eps in self.list_eps:
-            res = red.expgrad(dataX=train_adjusted[features], dataA=train_adjusted[protected_attribute].T.squeeze(),
-                                    dataY=train_adjusted[label].T.squeeze(),
-                                    learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
-
-            weighted_preds = self.weighted_predictions(res, train_full[features])
-            disparity_train = self.compute_FP(train_full[protected_attribute].T.squeeze(), train_full[label].T.squeeze(), weighted_preds)
-            error_train = self.compute_error(train_full[label].T.squeeze(), weighted_preds)
-
-            print("{},{},{}".format(eps, disparity_train, error_train))
-            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+                print("{},{},{}".format(eps, disparity_train, error_train))
+                print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
 
     def run_cross_validation_df(self):
         # (1) split train & test data using np array
@@ -631,8 +597,8 @@ def main():
     # runner.run_train_test_split_baseline()
     # runner.plot_charts()
 
-    # runner.other_data()
-    runner.run_cross_validation_df()
+    runner.replicate_results()
+    # runner.run_cross_validation_df()
     runner.plot_charts()
 
 if __name__ == '__main__':

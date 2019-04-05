@@ -1,4 +1,4 @@
-from file_reader import FileReader
+from parser_wiki import ParserWiki
 
 from sklearn.preprocessing import scale
 from sklearn.metrics import confusion_matrix
@@ -26,6 +26,7 @@ class AccuracyTradeOffs:
         self.N = 19412
         self.threshold_density = 101  # 21, 41, 81, 101
 
+        self.df = None
         self.data_x = None
         self.data_y_badfaith = None
         self.data_y_damaging = None
@@ -35,8 +36,9 @@ class AccuracyTradeOffs:
         self.plot_output = "dataset/plot_data_accuracy"
 
     def load_data(self):
-        reader = FileReader()
-        reader.read_from_file()
+        reader = ParserWiki()
+        # reader.load_data()
+        self.df = reader.load_data()
 
         # TODO: no rescaling on boolean variables..
         # self.data_x = self.data_rescale(reader.data_x)
