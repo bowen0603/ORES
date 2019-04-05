@@ -30,6 +30,11 @@ class AccuracyTradeOffs:
         self.data_x = None
         self.data_y_badfaith = None
         self.data_y_damaging = None
+        self.idx_X = None
+        self.idx_A = None
+        self.idx_y = None
+        self.train = None
+        self.test = None
 
         self.label_type = 'intention'
 
@@ -37,8 +42,9 @@ class AccuracyTradeOffs:
 
     def load_data(self):
         reader = ParserWiki()
-        # reader.load_data()
-        self.df = reader.load_data()
+        # reader.parse_data()
+        reader.read_from_file_np()
+        self.train, self.test, self.idx_X, self.idx_A, self.idx_y = reader.create_data()
 
         # TODO: no rescaling on boolean variables..
         # self.data_x = self.data_rescale(reader.data_x)
@@ -322,14 +328,74 @@ class AccuracyTradeOffs:
                 else:
                     case = 3  # tn
 
-
-
                 threshold = str(round(threshold, self.decimal))
                 print("{},{},{},{}".format(idx, threshold, case, int(X_test[idx][0])), file=fout)
             idx += 1
 
         print(cnt1, cnt2)
 
+    def create_individual_visuals_bar(self):
+
+        # threshold,idx,case
+        fout = open("dataset/individual_points_bar.csv", 'w')
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(self.data_x, self.data_y_damaging,
+                                                            test_size=0.5, random_state=22)
+
+        clf = GradientBoostingClassifier(learning_rate=0.01, max_depth=7, max_features="sqrt", n_estimators=700)
+        clf.fit(X_train, y_train)
+        y_pred_prob = clf.predict_proba(X_test)
+
+        idx = 0
+        thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+        print(len(y_pred_prob))
+
+        for threshold in thresholds:
+
+            idx = 0
+            tp, fp, fn, tn = 0, 0, 0, 0
+            tp_a0, fp_a0, fn_a0, tn_a0 = 0, 0, 0, 0
+            for y_score in y_pred_prob:
+
+                predicted_cls = 1 if y_score[1] >= threshold else 0
+                if predicted_cls == 1 and y_test[idx] == 1:
+                    case = 0  # tp
+                    tp += 1
+                    if X_test[idx][0] == 0.0:
+                        tp_a0 += 1
+                elif predicted_cls == 1 and y_test[idx] == 0:
+                    case = 1  # fp
+                    fp += 1
+                    if X_test[idx][0] == 0.0:
+                        fp_a0 += 1
+                elif predicted_cls == 0 and y_test[idx] == 1:
+                    case = 2  # fn
+                    fn += 1
+                    if X_test[idx][0] == 0.0:
+                        fn_a0 += 1
+                else:
+                    case = 3  # tn
+                    tn += 1
+                    if X_test[idx][0] == 0.0:
+                        tn_a0 += 1
+
+                idx += 1
+
+            rate_fp = 0 if fp + tn == 0 else fp / (fp + tn)
+            rate_tp = 0 if tp + fn == 0 else tp / (tp + fn)  # sensitivity/recall/true positive rates
+            rate_fn = 0 if fn + tp == 0 else fn / (fn + tp)
+            rate_tn = 0 if fp + tn == 0 else tn / (tn + fp)  # specificity/true negative rates
+
+            rate_fp_a0 = 0 if fp == 0 else fp_a0 / fp
+            rate_tp_a0 = 0 if tp == 0 else tp_a0 / tp
+            rate_fn_a0 = 0 if fn == 0 else fn_a0 / fn
+            rate_tn_a0 = 0 if tn == 0 else tn_a0 / tn
+
+            print("{},{},{},{},{},{},{},{},{}".format(threshold,
+                                                        rate_tp, rate_tp_a0,
+                                                        rate_fp, rate_fp_a0,
+                                                        rate_fn, rate_fn_a0,
+                                                        rate_tn, rate_tn_a0), file=fout)
 
 
 def main():
@@ -338,7 +404,8 @@ def main():
     # runner.run_cross_validation()
     # runner.plot_charts()
     # runner.plot_all_pairs()
-    runner.create_individual_visuals()
+    # runner.create_individual_visuals()
+    runner.create_individual_visuals_bar()
 
 if __name__ == '__main__':
     main()

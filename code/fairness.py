@@ -45,10 +45,7 @@ class PredictionFairness:
         self.data_x_g1 = []
         self.data_y_g1 = []
         self.df = None
-        self.idx_label_damaging = [1]
-        self.idx_label_faith = [0]
-        self.idx_protected_attribute = [2]
-        self.idx_features = list(range(3, 82))
+
 
         self.label_type = 'quality'
         self.plot_output = 'dataset/plot_data_fairness'
@@ -547,7 +544,7 @@ class PredictionFairness:
 
         for obj in [Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()]:
 
-            train, test, features, prot_attr, label = obj.create_data()
+            train, test, idx_X, idx_A, idx_y = obj.create_data()
 
             train_full = train
             # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
@@ -556,13 +553,13 @@ class PredictionFairness:
 
             f_output_train = open('dataset/plot_adult.csv', 'w')
             for eps in self.list_eps:
-                res = red.expgrad(dataX=train_adjusted[features], dataA=train_adjusted[prot_attr].T.squeeze(),
-                                        dataY=train_adjusted[label].T.squeeze(),
+                res = red.expgrad(dataX=train_adjusted[idx_X], dataA=train_adjusted[idx_A].T.squeeze(),
+                                        dataY=train_adjusted[idx_y].T.squeeze(),
                                         learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
 
-                weighted_preds = self.weighted_predictions(res, train_full[features])
-                disparity_train = self.compute_FP(train_full[prot_attr].T.squeeze(), train_full[label].T.squeeze(), weighted_preds)
-                error_train = self.compute_error(train_full[label].T.squeeze(), weighted_preds)
+                weighted_preds = self.weighted_predictions(res, train_full[idx_X])
+                disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(), weighted_preds)
+                error_train = self.compute_error(train_full[idx_y].T.squeeze(), weighted_preds)
 
                 print("{},{},{}".format(eps, disparity_train, error_train))
                 print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)

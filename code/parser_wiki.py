@@ -5,7 +5,7 @@ import pickle
 import base64
 import numpy as np
 import pandas as pd
-
+from sklearn.model_selection import train_test_split
 
 class ParserWiki:
     def __init__(self):
@@ -55,8 +55,7 @@ class ParserWiki:
         self.data_y_damaging = np.array(self.data_y_damaging)
         self.data_y_badfaith = np.array(self.data_y_badfaith)
 
-
-    def create_data(self):
+    def parse_data(self):
         cnt_line = 0
         for line in open(self.filename, 'r'):
             cnt_line += 1
@@ -92,9 +91,16 @@ class ParserWiki:
         self.df.to_csv('dataset/enwiki.csv', index=False, header=False)
         return self.df
 
-    def load_data(self):
+    def create_data(self):
         self.df = pd.read_csv('dataset/enwiki.csv', header=None)
-        return self.df
+        train, test = train_test_split(self.df, test_size=0.5, random_state=12)
+
+        idx_faith = [0]
+        idx_damaging = [1]
+        idx_A = [2]
+        idx_X = list(range(3, 82))
+
+        return train, test, idx_X, idx_A, (idx_faith, idx_damaging)
 
     def group_identifier(self):
         # revision id -> editor id -> editor page/info
