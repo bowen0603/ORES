@@ -34,6 +34,7 @@ class PredictionFairness:
         self.list_eps = [0.001, 0.025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
                          0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
         self.list_eps = [0.001, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.3, 0.5]
+        self.list_eps = [0.001, 0.01, 0.03, 0.05, 0.075, 0.1, 0.3, 0.5]
 
         self.data_x = None
         self.data_y = None
@@ -490,7 +491,7 @@ class PredictionFairness:
                                         abs(rate_fn_attr2 - rate_fn_attr1) / self.n_folds,
                                         accuracy / self.n_folds), file=f_output)
 
-    def plot_charts(self):
+    def plot_charts(self, filename=None):
         # TODO: check plotting correctness ...
         x = []
         y = []
@@ -498,7 +499,9 @@ class PredictionFairness:
         # runner.plot_charts()
         # f_output_train = open('dataset/plot_adult.csv', 'w')
         # for line in open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'r'):
-        for line in open('dataset/plot_adult.csv', 'r'):
+        print(filename)
+        # filename = 'dataset/plot_wiki.csv'
+        for line in open(filename, 'r'):
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
             accuracy = float(accuracy)
@@ -537,24 +540,29 @@ class PredictionFairness:
         plt.ylabel('Error Rate')
         # plt.plot(x, y, marker='o')
         plt.scatter(x, y, marker='o')
+        plt.pause(0.05)
         plt.show()
 
     def replicate_results(self):
 
-        for obj in [Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()]:
+        # Adult(), Campus(), Dutch(), Lawschool(),
+        for obj in [ParserWiki()]:
 
-            train, test, idx_X, idx_A, idx_y = obj.create_data()
+            train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
+            print(data_name, train.shape, test.shape, len(idx_X), len(idx_A), len(idx_y))
 
             train_full = test
             # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
             # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
             train_adjusted = train
 
-            f_output_train = open('dataset/plot_adult.csv', 'w')
+            filename = 'dataset/plot_{}.csv'.format(data_name)
+            f_output_train = open(filename, 'w')
             for eps in self.list_eps:
-                res = red.expgrad(dataX=train_adjusted[idx_X], dataA=train_adjusted[idx_A].T.squeeze(),
-                                        dataY=train_adjusted[idx_y].T.squeeze(),
-                                        learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
+                res = red.expgrad(dataX=train_adjusted[idx_X],
+                                  dataA=train_adjusted[idx_A].T.squeeze(),
+                                  dataY=train_adjusted[idx_y].T.squeeze(),
+                                  learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
 
                 weighted_preds = self.weighted_predictions(res, train_full[idx_X])
                 disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(), weighted_preds)
@@ -562,6 +570,8 @@ class PredictionFairness:
 
                 print("{},{},{}".format(eps, disparity_train, error_train))
                 print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+
+            self.plot_charts(filename)
 
     def run_cross_validation_df(self):
         # (1) split train & test data using np array
@@ -597,7 +607,7 @@ def main():
 
     runner.replicate_results()
     # runner.run_cross_validation_df()
-    # runner.plot_charts()
+    runner.plot_charts()
 
 if __name__ == '__main__':
     main()

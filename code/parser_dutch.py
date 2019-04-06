@@ -51,7 +51,7 @@ class Dutch:
         random_state = np.random.RandomState(12)
 
         data = self.read_data('dataset/data_census/dutch_census_2001.csv')
-        train_data, test_data = train_test_split(data, test_size=0.25, random_state=random_state)
+        train_data, test_data = train_test_split(data, test_size=0.5, random_state=random_state)
         train_data = train_data.reset_index()
         test_data = test_data.reset_index()
 
@@ -79,4 +79,4 @@ class Dutch:
         protected_attribute = ['gender']
         label = ['label']
 
-        return train, test, features, protected_attribute, label
+        return train, test, features, protected_attribute, label, "dutch"

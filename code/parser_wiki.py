@@ -101,7 +101,7 @@ class ParserWiki:
         idx_X = list(range(3, 82))
 
         # return train, test, idx_X, idx_A, (idx_faith, idx_damaging)
-        return train, test, idx_X, idx_A, idx_damaging
+        return train, test, idx_X, idx_A, idx_damaging, "wiki"
 
     def group_identifier(self):
         # revision id -> editor id -> editor page/info

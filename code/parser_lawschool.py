@@ -194,4 +194,4 @@ class Lawschool:
         protected_attribute = ['race']
         label = ['label']
 
-        return train, test, features, protected_attribute, label
+        return train, test, features, protected_attribute, label, "lawschool"
