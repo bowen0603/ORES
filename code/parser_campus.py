@@ -59,11 +59,11 @@ class Campus:
         return frame[self.relevant]
 
     def parse_data(self):
-        data_dir = 'dataset/data_campus/campus-scores.csv'
+        data_dir = 'dataset/data_campus/compas-scores.csv'
         return self.cleanup_frame(pd.read_csv(data_dir+self.files['scores']))
 
     def load_data(self):
-        data_dir = 'dataset/data_campus/campus-scores.csv'
+        data_dir = 'dataset/data_campus/compas-scores.csv'
         # return self.cleanup_frame(pd.read_csv(data_dir+self.files['scores']))
         return self.cleanup_frame(pd.read_csv(data_dir))
 

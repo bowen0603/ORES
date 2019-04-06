@@ -31,9 +31,9 @@ class PredictionFairness:
         self.n_folds = 1
         self.N = 19412
         self.eps = 0.100
-        # TODO: denser for smaller values
         self.list_eps = [0.001, 0.025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
                          0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
+        self.list_eps = [0.001, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.3, 0.5]
 
         self.data_x = None
         self.data_y = None
@@ -53,8 +53,7 @@ class PredictionFairness:
 
     def load_data(self):
         reader = ParserWiki()
-        # reader.load_data()
-        self.df = reader.load_data()
+        self.df = reader.parse_data()
 
         # TODO: no rescaling on boolean variables..
         # self.data_x = self.data_rescale(reader.data_x)
@@ -546,7 +545,7 @@ class PredictionFairness:
 
             train, test, idx_X, idx_A, idx_y = obj.create_data()
 
-            train_full = train
+            train_full = test
             # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
             # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
             train_adjusted = train
@@ -585,9 +584,11 @@ class PredictionFairness:
             print("{},{},{}".format(eps, disparity_train, error_train))
             print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
 
+        self.plot_charts()
+
 def main():
     runner = PredictionFairness(sys.argv[1])
-    runner.load_data()
+    # runner.load_data()
     # runner.data_reformulation()
     # runner.run_cross_validation()
     # runner.run_train_test_split_fairlearn()
@@ -596,7 +597,7 @@ def main():
 
     runner.replicate_results()
     # runner.run_cross_validation_df()
-    runner.plot_charts()
+    # runner.plot_charts()
 
 if __name__ == '__main__':
     main()

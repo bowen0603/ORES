@@ -79,7 +79,6 @@ class Adult:
         train, test = self.create_train_test()
 
         for col in train.columns:
-            print(col, train[col].dtype.name)
             if train[col].dtype.name == 'object' or train[col].dtype.name == 'category':
                 train[col] = train[col].astype('category').cat.codes
                 test[col] = test[col].astype('category').cat.codes
