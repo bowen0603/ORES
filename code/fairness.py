@@ -33,8 +33,8 @@ class PredictionFairness:
         self.eps = 0.100
         self.list_eps = [0.001, 0.025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
                          0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
-        self.list_eps = [0.001, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.3, 0.5]
-        self.list_eps = [0.001, 0.01, 0.03, 0.05, 0.075, 0.1, 0.3, 0.5]
+        # self.list_eps = [0.001, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.3, 0.5]
+        # self.list_eps = [0.001, 0.01, 0.03, 0.05, 0.075, 0.1, 0.3, 0.5]
 
         self.data_x = None
         self.data_y = None
@@ -496,11 +496,7 @@ class PredictionFairness:
         x = []
         y = []
         d = {}
-        # runner.plot_charts()
-        # f_output_train = open('dataset/plot_adult.csv', 'w')
-        # for line in open("{}_{}_train.csv".format(self.plot_output, self.label_type), 'r'):
-        print(filename)
-        # filename = 'dataset/plot_wiki.csv'
+        filename='dataset/plot_wiki.csv'
         for line in open(filename, 'r'):
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
@@ -540,12 +536,11 @@ class PredictionFairness:
         plt.ylabel('Error Rate')
         # plt.plot(x, y, marker='o')
         plt.scatter(x, y, marker='o')
-        plt.pause(0.05)
         plt.show()
 
     def replicate_results(self):
 
-        # Adult(), Campus(), Dutch(), Lawschool(),
+        # Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()
         for obj in [ParserWiki()]:
 
             train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
@@ -557,19 +552,37 @@ class PredictionFairness:
             train_adjusted = train
 
             filename = 'dataset/plot_{}.csv'.format(data_name)
+            print(filename)
             f_output_train = open(filename, 'w')
             for eps in self.list_eps:
                 res = red.expgrad(dataX=train_adjusted[idx_X],
                                   dataA=train_adjusted[idx_A].T.squeeze(),
                                   dataY=train_adjusted[idx_y].T.squeeze(),
-                                  learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
+                                  learner=LogisticRegression(), cons=moments.EO(), eps=eps)
 
-                weighted_preds = self.weighted_predictions(res, train_full[idx_X])
-                disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(), weighted_preds)
-                error_train = self.compute_error(train_full[idx_y].T.squeeze(), weighted_preds)
+                # res = red.expgrad(dataX=train_adjusted[idx_X],
+                #                   dataA=pd.Series(train_adjusted[idx_A]),
+                #                   dataY=pd.Series(train_adjusted[idx_y]),
+                #                   learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
 
-                print("{},{},{}".format(eps, disparity_train, error_train))
-                print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+                Q = res._asdict()["best_classifier"]
+                disp = moments.EO()
+                disp.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+
+                error = moments.MisclassError()
+                error.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+
+                dispVal = disp.gamma(Q).max()
+                errorVal = error.gamma(Q)[0]
+
+                # weighted_preds = self.weighted_predictions(res, train_full[idx_X])
+                # disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(), weighted_preds)
+                # error_train = self.compute_error(train_full[idx_y].T.squeeze(), weighted_preds)
+
+                # print("{},{},{}".format(eps, disparity_train, error_train))
+                # print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
+                print("{},{},{}".format(eps, dispVal, errorVal))
+                print("{},{},{}".format(eps, dispVal, errorVal), file=f_output_train)
 
             self.plot_charts(filename)
 
@@ -605,7 +618,7 @@ def main():
     # runner.run_train_test_split_baseline()
     # runner.plot_charts()
 
-    runner.replicate_results()
+    # runner.replicate_results()
     # runner.run_cross_validation_df()
     runner.plot_charts()
 
