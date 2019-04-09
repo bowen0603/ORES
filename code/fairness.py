@@ -381,122 +381,12 @@ class PredictionFairness:
                 disp[(0, a_val)] = np.abs(p_all - p_sub)
         return max(disp.values())
 
-
-    @staticmethod
-    def compute_FP2(a, y, weighted_pred):
-        """
-        Debug fn: compute FP disp given weighted_pred
-        assume a is already binarized
-        """
-        # sens_attr = list(a.columns)
-        disp = {}
-
-        for a_val in [0, 1]:
-        # for a_val in ['Male', 'Female']:
-
-            a_c = a[0]
-            # a_c = a[0].values
-            # calculate Pr[ y-hat = 1 | y = 1 ]
-            p_all = np.average(weighted_pred[y == 0])
-            sum = 0
-            cnt = 0
-            cnt_nan = 0
-            for idx in range(len(weighted_pred)):
-                try:
-                    a_c_val = int(float(a_c[idx].replace('[', '').replace(']', '')))
-                except:
-                    cnt_nan += 1
-                    continue
-
-                if y[idx] == 0 & a_c_val == a_val:
-                    cnt += 1
-                    sum += weighted_pred[idx]
-            # print(cnt_nan)
-            # print(sum, cnt)
-            p_sub = 0.0
-            if cnt != 0:
-                p_sub = 1.0*sum / cnt
-
-            disp[a_val] = np.abs(p_all - p_sub)
-        return max(disp.values())
-
-    def run_cross_validation(self):
-
-        it = 0
-        clf_cnt = 0
-        f_output = open("{}_{}.csv".format(self.plot_output, self.label_type), 'w')
-
-        for train_idx, test_idx in cv.KFold(len(self.data_x), n_folds=self.n_folds):
-            it += 1
-            print("Working on Iteration {} ..".format(it))
-
-            X_train, X_test = self.data_x[train_idx], self.data_x[test_idx]
-            Y_train, Y_test = self.data_y[train_idx], self.data_y[test_idx]
-            X_train_protected, X_test_protected = self.data_x_protected[train_idx], self.data_x_protected[test_idx]
-
-            res_tuple = red.expgrad(dataX=pd.DataFrame(X_train), dataA=X_train_protected, dataY=Y_train,
-                                    learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
-            res = res_tuple._asdict()
-
-            for clf in res['classifiers']:
-                clf_cnt += 1
-
-                # fn for class 1
-                rate_fn_attr1 = 0
-                data_x_attr1 = np.array(self.data_x_g1)
-                data_x_attr1 = np.delete(data_x_attr1, 0, 1)
-                data_y_attr1 = np.array(self.data_y_g1)
-                # todo: for each data point, w_i * proba => make sure it's fnr, divided by n??
-                for train_idx, test_idx in cv.KFold(len(self.data_x_g1), n_folds=self.n_folds):
-                    X_train, X_test = data_x_attr1[train_idx], data_x_attr1[test_idx]
-                    Y_train, Y_test = data_y_attr1[train_idx], data_y_attr1[test_idx]
-
-                    Y_pred = clf.predict(X_train)
-                    tn, fp, fn, tp = confusion_matrix(y_true=Y_train, y_pred=Y_pred).ravel()
-                    # print("cl1 FP rate: {}".format(fn / (fn + tp)))
-                    rate_fn_attr1 += fn / (fn + tp)
-
-                # fn for class 2
-                rate_fn_attr2 = 0
-                data_x_attr2 = np.array(self.data_x_attr2)
-                data_x_attr2 = np.delete(data_x_attr2, 0, 1)
-                data_y_attr2 = np.array(self.data_y_attr2)
-                for train_idx, test_idx in cv.KFold(len(self.data_x_attr2), n_folds=self.n_folds):
-                    X_train, X_test = data_x_attr2[train_idx], data_x_attr2[test_idx]
-                    Y_train, Y_test = data_y_attr2[train_idx], data_y_attr2[test_idx]
-
-                    Y_pred = clf.predict(X_train)
-                    tn, fp, fn, tp = confusion_matrix(y_true=Y_train, y_pred=Y_pred).ravel()
-                    # print("cl2 FP rate: {}".format(fn / (fn + tp)))
-                    rate_fn_attr2 += fn / (fn + tp)
-
-                # accuracy of two classes
-                accuracy = 0
-                data_x = np.array(self.data_x_g1 + self.data_x_attr2)
-                data_x = np.delete(data_x, 0, 1)
-                data_y = np.array(self.data_y_g1 + self.data_y_attr2)
-                for train_idx, test_idx in cv.KFold(len(data_x), n_folds=self.n_folds):
-                    X_train, X_test = data_x[train_idx], data_x[test_idx]
-                    Y_train, Y_test = data_y[train_idx], data_y[test_idx]
-
-                    Y_pred = clf.predict(X_train)
-                    tn, fp, fn, tp = confusion_matrix(y_true=Y_train, y_pred=Y_pred).ravel()
-                    # print("accuracy rate: {}".format((tp + tn) / (fn + tn + fp + tp)))
-                    accuracy += (tp + tn) / (fn + tn + fp + tp)
-
-                print("Model {}: unfairness disparity {:.5f}, accuracy {:.5f}".format(clf_cnt,
-                                                                                      abs(rate_fn_attr2/self.n_folds - rate_fn_attr1/self.n_folds),
-                                                                                      accuracy/self.n_folds))
-                print("{},{},{}".format(clf_cnt,
-                                        abs(rate_fn_attr2 - rate_fn_attr1) / self.n_folds,
-                                        accuracy / self.n_folds), file=f_output)
-
     def plot_charts(self, filename=None):
         # TODO: check plotting correctness ...
         x = []
         y = []
         d = {}
-        filename='dataset/plot_wiki.csv'
+        # filename='dataset/plot_lawschool.csv'
         for line in open(filename, 'r'):
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
@@ -541,7 +431,7 @@ class PredictionFairness:
     def replicate_results(self):
 
         # Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()
-        for obj in [ParserWiki()]:
+        for obj in [Adult()]:
 
             train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
             print(data_name, train.shape, test.shape, len(idx_X), len(idx_A), len(idx_y))
@@ -549,65 +439,42 @@ class PredictionFairness:
             train_full = test
             # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
             # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
+
+            train.loc[train[idx_y[0]] == 1, idx_A[0]] = 0
             train_adjusted = train
 
             filename = 'dataset/plot_{}.csv'.format(data_name)
             print(filename)
-            f_output_train = open(filename, 'w')
+            f_output = open(filename, 'w')
             for eps in self.list_eps:
                 res = red.expgrad(dataX=train_adjusted[idx_X],
                                   dataA=train_adjusted[idx_A].T.squeeze(),
                                   dataY=train_adjusted[idx_y].T.squeeze(),
-                                  learner=LogisticRegression(), cons=moments.EO(), eps=eps)
+                                  # learner=LogisticRegression(), cons=moments.EO(), eps=eps)
+                                  learner=RandomForestClassifier(), cons=moments.EO(), eps=eps)
 
-                # res = red.expgrad(dataX=train_adjusted[idx_X],
-                #                   dataA=pd.Series(train_adjusted[idx_A]),
-                #                   dataY=pd.Series(train_adjusted[idx_y]),
-                #                   learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
+                weighted_preds = self.weighted_predictions(res, train_full[idx_X])
+                disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(), weighted_preds)
+                error_train = self.compute_error(train_full[idx_y].T.squeeze(), weighted_preds)
 
-                Q = res._asdict()["best_classifier"]
-                disp = moments.EO()
-                disp.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+                print("{},{},{}".format(eps, disparity_train, error_train))
+                print("{},{},{}".format(eps, disparity_train, error_train), file=f_output)
 
-                error = moments.MisclassError()
-                error.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+                # Q = res._asdict()["best_classifier"]
+                # disp = moments.EO()
+                # disp.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+                #
+                # error = moments.MisclassError()
+                # error.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+                #
+                # dispVal = disp.gamma(Q).max()
+                # errorVal = error.gamma(Q)[0]
+                # print("{},{},{}".format(eps, dispVal, errorVal))
+                # print("{},{},{}".format(eps, dispVal, errorVal), file=f_output)
 
-                dispVal = disp.gamma(Q).max()
-                errorVal = error.gamma(Q)[0]
-
-                # weighted_preds = self.weighted_predictions(res, train_full[idx_X])
-                # disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(), weighted_preds)
-                # error_train = self.compute_error(train_full[idx_y].T.squeeze(), weighted_preds)
-
-                # print("{},{},{}".format(eps, disparity_train, error_train))
-                # print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
-                print("{},{},{}".format(eps, dispVal, errorVal))
-                print("{},{},{}".format(eps, dispVal, errorVal), file=f_output_train)
-
+            f_output.close()
             self.plot_charts(filename)
 
-    def run_cross_validation_df(self):
-        # (1) split train & test data using np array
-        # (2) convert it to df for features
-        random_state = np.random.RandomState(12)
-        train_data, test_data = train_test_split(self.df, test_size=0.5, random_state=random_state)
-
-        f_output_train = open('dataset/plot_adult.csv', 'w')
-        for eps in self.list_eps:
-            res = red.expgrad(dataX=train_data[self.idx_features],
-                              dataA=train_data[self.idx_protected_attribute].T.squeeze(),
-                              dataY=train_data[self.idx_label_damaging].T.squeeze(),
-                              learner=LogisticRegression(), cons=moments.EO(), eps=self.eps)
-
-            weighted_preds = self.weighted_predictions(res, test_data[self.idx_features])
-            disparity_train = self.compute_FP(test_data[self.idx_protected_attribute].T.squeeze(),
-                                              test_data[self.idx_label_damaging].T.squeeze(), weighted_preds)
-            error_train = self.compute_error(test_data[self.idx_label_damaging].T.squeeze(), weighted_preds)
-
-            print("{},{},{}".format(eps, disparity_train, error_train))
-            print("{},{},{}".format(eps, disparity_train, error_train), file=f_output_train)
-
-        self.plot_charts()
 
 def main():
     runner = PredictionFairness(sys.argv[1])
@@ -618,9 +485,8 @@ def main():
     # runner.run_train_test_split_baseline()
     # runner.plot_charts()
 
-    # runner.replicate_results()
-    # runner.run_cross_validation_df()
-    runner.plot_charts()
+    runner.replicate_results()
+    # runner.plot_charts()
 
 if __name__ == '__main__':
     main()
