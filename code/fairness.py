@@ -31,6 +31,7 @@ class PredictionFairness:
         self.n_folds = 1
         self.N = 19412
         self.eps = 0.100
+        self.threshold_density = 101
         self.list_eps = [0.001, 0.025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
                          0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
         # self.list_eps = [0.001, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.3, 0.5]
@@ -178,6 +179,54 @@ class PredictionFairness:
     @staticmethod
     def collect_classifiers():
         return [LogisticRegression(), RandomForestClassifier(), GradientBoostingClassifier()]
+
+
+    def run_train_test_split_baseline2(self):
+        # Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()
+        for obj in [Adult()]:
+
+            train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
+            print(data_name, train.shape, test.shape, len(idx_X), len(idx_A), len(idx_y))
+
+            # train the model using the train data with full features
+            clf = GradientBoostingClassifier(learning_rate=0.01, max_depth=7, max_features="sqrt", n_estimators=700)
+            clf = RandomForestClassifier()
+            clf = LogisticRegression(max_iter=500, penalty='l1', C=1)  # default P>0.5
+            # todo: check the difference with and without idx_A
+            clf.fit(train[idx_X], train[idx_y])
+            y_pred_prob = clf.predict_proba(test[idx_X])
+
+            clf.fit(test[idx_X], train[idx_y])
+
+            y_pred = clf.predict_proba(test[idx_X])
+            y_pred = clf.predict(test[idx_X])
+
+            error_train = self.compute_error(train[idx_y[0]], y_pred)
+            disparity_train = self.compute_FP(train[idx_A[0]], train[idx_y[0]], y_pred)
+
+            print(disparity_train, error_train)
+
+            single_test = True
+            if single_test:
+                return
+
+            thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+            print(len(y_pred_prob))
+            filename='dataset/plot.csv'
+            f_output = open(filename, 'w')
+            for threshold in thresholds:
+                y_prob = y_pred_prob[:, 1]
+                y_prob[y_prob >= threshold] = 1
+                y_prob[y_prob < threshold] = 0
+
+                error_train = self.compute_error(train[idx_y[0]], y_prob)
+                disparity_train = self.compute_FP(train[idx_A[0]], train[idx_y[0]], y_prob)
+
+                print("{},{},{}".format(threshold, disparity_train, error_train))
+                print("{},{},{}".format(threshold, disparity_train, error_train), file=f_output)
+
+            f_output.close()
+            self.plot_charts(filename)
 
     def run_train_test_split_baseline(self):
 
@@ -482,10 +531,10 @@ def main():
     # runner.data_reformulation()
     # runner.run_cross_validation()
     # runner.run_train_test_split_fairlearn()
-    # runner.run_train_test_split_baseline()
+    runner.run_train_test_split_baseline2()
     # runner.plot_charts()
 
-    runner.replicate_results()
+    # runner.replicate_results()
     # runner.plot_charts()
 
 if __name__ == '__main__':
