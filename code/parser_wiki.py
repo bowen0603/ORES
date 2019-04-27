@@ -61,6 +61,7 @@ class ParserWiki:
             cnt_line += 1
             data_obj = json.loads(line)
             dict_features = pickle.loads(base64.b85decode(bytes(data_obj['cache'], 'ascii')))
+            print(dict_features.head(5))
 
             vals = []
             is_anon = 0
@@ -138,8 +139,9 @@ class ParserWiki:
 
 def main():
     reader = ParserWiki()
-    reader.create_data()
-    reader.data_stats()
+    # reader.create_data()
+    # reader.data_stats()
+    reader.parse_data()
 
 if __name__ == '__main__':
     main()

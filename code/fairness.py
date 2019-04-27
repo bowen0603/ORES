@@ -183,28 +183,45 @@ class PredictionFairness:
 
     def run_train_test_split_baseline2(self):
         # Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()
-        for obj in [Adult()]:
+        for obj in [ParserWiki()]:
 
             train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
             print(data_name, train.shape, test.shape, len(idx_X), len(idx_A), len(idx_y))
 
             # train the model using the train data with full features
-            clf = GradientBoostingClassifier(learning_rate=0.01, max_depth=7, max_features="sqrt", n_estimators=700)
-            clf = RandomForestClassifier()
+            # clf = GradientBoostingClassifier(learning_rate=0.01, max_depth=7, max_features="sqrt", n_estimators=700)
+            # clf = RandomForestClassifier()
             clf = LogisticRegression(max_iter=500, penalty='l1', C=1)  # default P>0.5
-            # todo: check the difference with and without idx_A
-            clf.fit(train[idx_X], train[idx_y])
-            y_pred_prob = clf.predict_proba(test[idx_X])
+            # clf.fit(train[idx_X+idx_A], train[idx_y])
+            clf.fit(train[idx_X + idx_A], train[idx_y])
 
-            clf.fit(test[idx_X], train[idx_y])
+            df_X = test[idx_X+idx_A]
+            X_ga0 = df_X.loc[df_X[idx_A[0]] == 0]
+            X_ga1 = df_X.loc[df_X[idx_A[0]] == 1]
 
-            y_pred = clf.predict_proba(test[idx_X])
-            y_pred = clf.predict(test[idx_X])
+            df_y = test[idx_y]
+            y_ga0 = df_y.loc[df_X[idx_A[0]] == 0]
+            y_ga1 = df_y.loc[df_X[idx_A[0]] == 1]
 
-            error_train = self.compute_error(train[idx_y[0]], y_pred)
-            disparity_train = self.compute_FP(train[idx_A[0]], train[idx_y[0]], y_pred)
+            y_pred_prob = clf.predict_proba(test[idx_X+idx_A])
 
-            print(disparity_train, error_train)
+            # clf.fit(test[idx_X+idx_A], train[idx_y])
+            # y_pred = clf.predict_proba(test[idx_X+idx_A])[:, 1]
+            # logistic regression: 0.043 0.246 (without protected attribute)  # 0.074 0.244 (with protected attribute)
+            # gradient boosting: 0.063 0.177 (with protected attribute)
+            # y_pred = clf.predict(test[idx_X+idx_A])
+            # 0.025 0.176  # 0.044 0.173
+            tn, fp, fn, tp = confusion_matrix(y_ga0, clf.predict(X_ga0), [0, 1]).ravel()
+            print(tn, fp, fn, tp)
+            print(fp / (fp+tn))
+            tn, fp, fn, tp = confusion_matrix(y_ga1, clf.predict(X_ga1), [0, 1]).ravel()
+            print(tn, fp, fn, tp)
+            print(fp / (fp + tn))
+
+            # error_train = self.compute_error(train[idx_y[0]], y_pred)
+            # disparity_train = self.compute_FP(train[idx_A[0]], train[idx_y[0]], y_pred)
+            #
+            # print(disparity_train, error_train)
 
             single_test = True
             if single_test:
@@ -430,6 +447,23 @@ class PredictionFairness:
                 disp[(0, a_val)] = np.abs(p_all - p_sub)
         return max(disp.values())
 
+    @staticmethod
+    def compute_FN(a, y, weighted_pred):
+        # sens_attr = list(a.columns)
+        disp = {}
+        # for c in sens_attr:
+        for a_val in [0, 1]:
+            # a_c = a[0]
+            a_c = a
+            # calculate Pr[ y-hat = 1 | y = 1 ]
+            p_all = np.average(weighted_pred[y == 1])
+
+            if len(weighted_pred[(y == 1) & (a_c == a_val)]) > 0:
+                # calculate Pr[ y-hat = 1 | y = 1, a=1]
+                p_sub = np.average(weighted_pred[(y == 1) & (a_c == a_val)])
+                disp[(0, a_val)] = np.abs(p_all - p_sub)
+        return max(disp.values())
+
     def plot_charts(self, filename=None):
         # TODO: check plotting correctness ...
         x = []
@@ -480,7 +514,7 @@ class PredictionFairness:
     def replicate_results(self):
 
         # Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()
-        for obj in [Adult()]:
+        for obj in [ParserWiki()]:
 
             train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
             print(data_name, train.shape, test.shape, len(idx_X), len(idx_A), len(idx_y))
@@ -488,8 +522,7 @@ class PredictionFairness:
             train_full = test
             # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
             # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
-
-            train.loc[train[idx_y[0]] == 1, idx_A[0]] = 0
+            # train.loc[train[idx_y[0]] == 1, idx_A[0]] = 0
             train_adjusted = train
 
             filename = 'dataset/plot_{}.csv'.format(data_name)
@@ -503,7 +536,10 @@ class PredictionFairness:
                                   learner=RandomForestClassifier(), cons=moments.EO(), eps=eps)
 
                 weighted_preds = self.weighted_predictions(res, train_full[idx_X])
-                disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(), weighted_preds)
+                # disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(),
+                #                                   weighted_preds)
+                disparity_train = self.compute_FN(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(),
+                                                  weighted_preds)
                 error_train = self.compute_error(train_full[idx_y].T.squeeze(), weighted_preds)
 
                 print("{},{},{}".format(eps, disparity_train, error_train))
@@ -531,10 +567,10 @@ def main():
     # runner.data_reformulation()
     # runner.run_cross_validation()
     # runner.run_train_test_split_fairlearn()
-    runner.run_train_test_split_baseline2()
+    # runner.run_train_test_split_baseline2()
     # runner.plot_charts()
 
-    # runner.replicate_results()
+    runner.replicate_results()
     # runner.plot_charts()
 
 if __name__ == '__main__':
