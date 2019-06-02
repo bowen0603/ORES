@@ -1,7 +1,7 @@
 from parser_adult import Adult
 from parser_dutch import Dutch
 from parser_lawschool import Lawschool
-from parser_campus import Campus
+from parser_campus import Compas
 from parser_wiki import ParserWiki
 
 import sys
@@ -20,6 +20,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import precision_recall_curve
 
 __author__ = 'bobo'
 
@@ -31,11 +32,19 @@ class PredictionFairness:
         self.n_folds = 1
         self.N = 19412
         self.eps = 0.100
-        self.threshold_density = 101
-        self.list_eps = [0.001, 0.025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
-                         0.05, 0.075, 0.1, 0.2, 0.3, 0.4, 0.5]
+        self.threshold_density = 41  #21
+        # Disparity FPR: 0.015
+        # self.list_eps = [0.001, 0.0025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
+        #                  0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.2, 0.3, 0.4, 0.5]
+        self.list_eps = [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+        self.list_eps = np.linspace(-1, 1, 81, endpoint=True)
+        # self.list_eps = np.linspace(-3, 3, 61, endpoint=True)
+
+        # self.list_eps = [range(0.01, 0.2, 0.01)]
+        # self.list_eps = np.arange(0.01, 0.2, 0.01)
         # self.list_eps = [0.001, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.3, 0.5]
         # self.list_eps = [0.001, 0.01, 0.03, 0.05, 0.075, 0.1, 0.3, 0.5]
+        # self.list_eps = [0.0001, 0.00025, 0.0005, 0.00075, 0.001, 0.0025, 0.005, 0.0075, 0.01, 0.025, 0.05]
 
         self.data_x = None
         self.data_y = None
@@ -47,7 +56,6 @@ class PredictionFairness:
         self.data_x_g1 = []
         self.data_y_g1 = []
         self.df = None
-
 
         self.label_type = 'quality'
         self.plot_output = 'dataset/plot_data_fairness'
@@ -182,7 +190,7 @@ class PredictionFairness:
 
 
     def run_train_test_split_baseline2(self):
-        # Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()
+        # Adult(), Compas(), Dutch(), Lawschool(), ParserWiki()
         for obj in [ParserWiki()]:
 
             train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
@@ -204,6 +212,15 @@ class PredictionFairness:
             y_ga1 = df_y.loc[df_X[idx_A[0]] == 1]
 
             y_pred_prob = clf.predict_proba(test[idx_X+idx_A])
+            y_pred_score = []
+            for neg, pos in y_pred_prob:
+                y_pred_score.append(pos)
+
+            # list_roc_auc_damaging.append(roc_auc_score(y_true=y_test_damaging, y_score=y_pred_score))
+            # list_pr_auc_damaging.append(average_precision_score(y_true=y_test_damaging, y_score=y_pred_score))
+            #
+            # list_roc_auc_badfaith.append(roc_auc_score(y_true=y_test_badfaith, y_score=y_pred_score))
+            # list_pr_auc_badfaith.append(average_precision_score(y_true=y_test_badfaith, y_score=y_pred_score))
 
             # clf.fit(test[idx_X+idx_A], train[idx_y])
             # y_pred = clf.predict_proba(test[idx_X+idx_A])[:, 1]
@@ -415,7 +432,6 @@ class PredictionFairness:
         hs = res_tuple.classifiers
         weights = res_tuple.weights  # weights over classifiers
         preds = hs.apply(lambda h: h.predict(x))  # predictions
-        # return weighted predictions
         return weights.dot(preds)
 
     @staticmethod
@@ -432,11 +448,8 @@ class PredictionFairness:
 
     @staticmethod
     def compute_FP(a, y, weighted_pred):
-        # sens_attr = list(a.columns)
         disp = {}
-        # for c in sens_attr:
         for a_val in [0, 1]:
-            # a_c = a[0]
             a_c = a
             # calculate Pr[ y-hat = 1 | y = 1 ]
             p_all = np.average(weighted_pred[y == 0])
@@ -446,6 +459,31 @@ class PredictionFairness:
                 p_sub = np.average(weighted_pred[(y == 0) & (a_c == a_val)])
                 disp[(0, a_val)] = np.abs(p_all - p_sub)
         return max(disp.values())
+
+
+    @staticmethod
+    def compute_EO(a, y, weighted_pred):
+        """
+        Debug fn: compute equalized odds given weighted_pred
+        assume a is already binarized
+        """
+        sens_attr = list(a.columns)
+        disp = {}
+        # for c in sens_attr:
+        for y_val in [0, 1]:
+            for a_val in [0, 1]:
+                a_c = a
+                # calculate Pr[ y-hat = 1 | y = 1 ]
+                p_all = np.average(weighted_pred[y == y_val])
+
+                if len(weighted_pred[(y == y_val) & (a_c == a_val)]) > 0:
+                    # calculate Pr[ y-hat = 1 | y = 1, a=1]
+                    p_sub = np.average(weighted_pred[(y == y_val) & (a_c == a_val)])
+                    disp[(0, y_val, a_val)] = np.abs(p_all - p_sub)
+        eps = max(disp.values())
+        # (c_max, a_max, _) = max(disp, key=disp.get)
+        # group_size = len(y[a[c_max] == a_max]) / len(y)
+        return eps
 
     @staticmethod
     def compute_FN(a, y, weighted_pred):
@@ -461,15 +499,15 @@ class PredictionFairness:
             if len(weighted_pred[(y == 1) & (a_c == a_val)]) > 0:
                 # calculate Pr[ y-hat = 1 | y = 1, a=1]
                 p_sub = np.average(weighted_pred[(y == 1) & (a_c == a_val)])
-                disp[(0, a_val)] = np.abs(p_all - p_sub)
+                disp[(1, a_val)] = np.abs(p_all - p_sub)
         return max(disp.values())
+
 
     def plot_charts(self, filename=None):
         # TODO: check plotting correctness ...
         x = []
         y = []
         d = {}
-        # filename='dataset/plot_lawschool.csv'
         for line in open(filename, 'r'):
             model, unfairness, accuracy = line.strip().split(',')
             unfairness = float(unfairness)
@@ -480,82 +518,822 @@ class PredictionFairness:
                 d[unfairness].append(accuracy)
             else:
                 d[unfairness] = [accuracy]
-        # TODO: remove points whose disparity is greater than 0.5 to see details
-        # for key, val in d.items():
-        #     d[key] = sum(d[key]) / len(d[key])
-        #
-        # for unfairness, accuracy in sorted(d.items(), key=operator.itemgetter(0)):  # sorted by unfairness
-        #     # y.append(unfairness)
-        #     # x.append(accuracy)
-        #     x.append(unfairness)
-        #     y.append(accuracy)
-
-        # if self.label_type == 'quality':
-        #     # equalizing FN
-        #     plt.xlabel('Unfairness (Disparity of False Negative Rates/Quality Control)')
-        #     plt.ylabel('Prediction accuracy')
-        #     plt.title('Value Trade-off between Unfairness and Prediction Accuracy\n(Editing Quality)')
-        # elif self.label_type == 'intention':
-        #     # equalizing FN
-        #     plt.ylabel('Unfairness (Disparity of False Negative Rates/Motivation Protection)')
-        #     plt.xlabel('Prediction accuracy')
-        #     plt.title('Value Trade-off between Unfairness and Prediction Accuracy\n(Editing Intention)')
-        # else:
-        #     # TODO: equalizing FP rates
-        #     print("Invalid prediction label ..")
-        #     return
 
         plt.xlabel('Disparity')
         plt.ylabel('Error Rate')
+        # plt.xlabel('Recall')
+        # plt.ylabel('Precision')
         # plt.plot(x, y, marker='o')
+        # x, y = self.convex_env_train(x, y)
         plt.scatter(x, y, marker='o')
         plt.show()
 
+    def plot_charts_quad(self, filename=None):
+        # TODO: check plotting correctness ...
+        x = []
+        y = []
+        d = {}
+        dx = {}
+        dy = {}
+        filename = 'dataset/non_normalized_quad.csv'
+        for line in open(filename, 'r'):
+            lamb0, lamb1, unfairness, accuracy = line.strip().split(',')
+            unfairness = float(unfairness)
+            accuracy = float(accuracy)
+            x.append(unfairness)
+            y.append(accuracy)
+            dx[str(lamb0) +str(lamb1)] = unfairness
+            dy[str(lamb0) +str(lamb1)] = accuracy
+
+            # dy[(lamb0, lamb1)] = accuracy
+
+            # dx[lamb0] = unfairness
+            # dy[lamb0] = accuracy
+
+            if unfairness in d:
+                d[unfairness].append(accuracy)
+            else:
+                d[unfairness] = [accuracy]
+
+        plt.xlabel('Disparity')
+        plt.ylabel('Error Rate')
+        # plt.xlabel('Recall')
+        # plt.ylabel('Precision')
+        # plt.plot(x, y, marker='o')
+        tuples = self.convex_env_train(dx, dy)
+        return tuples
+        # x, y = [], []
+        # for tup in tuples:
+        #     x.append(dx[tup])
+        #     y.append(dy[tup])
+        #
+        #
+        # # x, y = map(list, zip(*tuples))
+        # # x = list(map(float, x))
+        # # y = list(map(float, y))
+        # plt.scatter(x, y, marker='o')
+        # plt.show()
+
+    def plot_charts_multiple(self, filename=None):
+        # TODO: check plotting correctness ...
+        x = []
+        y = []
+        d = {}
+        filename = 'dataset/non_normalized3.csv'
+        for line in open(filename, 'r'):
+            model, unfairness, accuracy = line.strip().split(',')
+            unfairness = float(unfairness)
+            accuracy = float(accuracy)
+            x.append(unfairness)
+            y.append(accuracy)
+            if unfairness in d:
+                d[unfairness].append(accuracy)
+            else:
+                d[unfairness] = [accuracy]
+
+        plt.xlabel('Disparity')
+        plt.ylabel('Error Rate')
+        # plt.xlabel('Recall')
+        # plt.ylabel('Precision')
+        # plt.plot(x, y, marker='o')
+        # x, y = self.convex_env_train(x, y)
+        plt.scatter(x, y, marker='o', label='non_normalized')
+
+        x, y = [], []
+        filename = 'dataset/normalized3.csv'
+        for line in open(filename, 'r'):
+            model, unfairness, accuracy = line.strip().split(',')
+            unfairness = float(unfairness)
+            accuracy = float(accuracy)
+            x.append(unfairness)
+            y.append(accuracy)
+            if unfairness in d:
+                d[unfairness].append(accuracy)
+            else:
+                d[unfairness] = [accuracy]
+
+        # x, y = self.convex_env_train(x, y)
+        plt.scatter(x, y, marker='^', label='normalized')
+
+        x, y = [], []
+        filename = 'dataset/plot_compas.csv'
+        for line in open(filename, 'r'):
+            model, unfairness, accuracy = line.strip().split(',')
+            unfairness = float(unfairness)
+            accuracy = float(accuracy)
+            x.append(unfairness)
+            y.append(accuracy)
+            if unfairness in d:
+                d[unfairness].append(accuracy)
+            else:
+                d[unfairness] = [accuracy]
+
+        # x, y = self.convex_env_train(x, y)
+        plt.scatter(x, y, marker='2', label='fairlearn')
+        plt.legend(loc='best')
+
+        plt.show()
+
+    def generate_plot_data_lg(self):
+        train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type='race') # type doesn't matter..
+        thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+
+        fout = open('dataset/non_normalized_pareto_thre_t0.csv', 'w')
+        tp = fp = fn = tn = 0
+        tp_a0 = fp_a0 = fn_a0 = tn_a0 = 0
+
+        clf = RandomForestClassifier()
+        clf.fit(data[idx_X + idx_A], data[idx_y])
+
+        # print(train[idx_X + idx_A])
+        print(idx_X + idx_A)
+        print(clf.feature_importances_)
+
+        clf = LogisticRegression()
+        clf.fit(data[idx_X + idx_A], data[idx_y])
+        # y_pred = clf.predict(test[idx_X + idx_A])
+        y_pred_prob = clf.predict_proba(data[idx_X + idx_A])
+
+        for threshold in thresholds:
+            tp = fp = fn = tn = 0
+            for idx in range(len(y_pred_prob)):
+                predicted_cls = 1 if y_pred_prob[idx][1] >= threshold else 0
+
+                # sub_df.iloc[0]['A']
+                if predicted_cls == 1 and data.iloc[idx][idx_y[0]] == 1:
+                    tp += 1
+                elif predicted_cls == 1 and data.iloc[idx][idx_y[0]] == 0:
+                    fp += 1
+                elif predicted_cls == 0 and data.iloc[idx][idx_y[0]] == 1:
+                    fn += 1
+                else:
+                    tn += 1
+
+            precision = 0 if tp + fp == 0 else tp / (tp + fp)
+            recall = 0 if tp + fn == 0 else tp / (tp + fn)
+            accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+            fpr = 0 if fp + tn == 0 else fp / (fp + tn)
+            fnr = 0 if fn + tp == 0 else fn / (fn + tp)
+            fp_a1, fn_a1, tp_a1, tn_a1 = 0, 0, 0, 0
+            tp_a0, fp_a0, tn_a0, fn_a0 = tp, fp, tn, fn
+
+            disp_fn, disp_fp = 0, 0
+            lamb0, lamb1 = 0, 0
+            att_type = 0
+            # att_type = 1  # race
+            # att_type = 2  # gender
+            # print('disp_fn,disp_fp,threshold,precision,recall,fpr,fnr,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type')
+            # print('{:.5f},{:.5f},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}'.format(disp_fn, disp_fp, threshold,
+            #                                                                 precision, recall, fpr, fnr, accuracy,
+            #                                                                 tp_a0, tp_a1, fp_a0, fp_a1,
+            #                                                                 fn_a0, fn_a1, tn_a0, tn_a1, att_type),
+            #       file=fout)
+
+            # threshold,lamb0,lamb1,disp_fp,error,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+
+            # threshold,lamb0,lamb1,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+            print("{:.3f},{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
+                threshold, lamb0, lamb1, disp_fp, 1-accuracy,
+                precision, recall,
+                fpr, fnr, accuracy,
+                tp_a0, tp_a1, fp_a0, fp_a1,
+                fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
+            # print(
+            #     "{},{},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
+            #         lamb0, lamb1, threshold, disp_fn, disp_fp,
+            #         precision, recall,
+            #         fpr, fnr, accuracy,
+            #         tp_a0, tp_a1, fp_a0, fp_a1,
+            #         fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
+
+    def generate_plot_data(self):
+
+        train, test, idx_X, idx_A, idx_y, data_name = Compas().create_data()
+        thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+
+        fout = open('data1.csv', 'w')
+
+        for eps in self.list_eps:
+            res = red.expgrad(dataX=train[idx_X],
+                              dataA=train[idx_A].T.squeeze(),
+                              dataY=train[idx_y].T.squeeze(),
+                              learner=LogisticRegression(), cons=moments.EO(), eps=eps)
+
+            weighted_preds = self.weighted_predictions(res, test[idx_X])
+            # disparity_FP = self.compute_FP(test[idx_A].T.squeeze(), test[idx_y].T.squeeze(), weighted_preds)
+            # disparity_FN = self.compute_FP(test[idx_A].T.squeeze(), test[idx_y].T.squeeze(), weighted_preds)
+
+            for threshold in thresholds:
+                print(eps, threshold)
+                tp = fp = fn = tn = 0
+                tp_a0 = fp_a0 = fn_a0 = tn_a0 = 0
+                for idx in range(len(weighted_preds)):
+                    predicted_cls = 1 if weighted_preds[idx] >= threshold else 0
+
+                    # sub_df.iloc[0]['A']
+                    if predicted_cls == 1 and test.iloc[idx][idx_y[0]] == 1:
+                        case = 0  # tp
+                        tp += 1
+                        if test.iloc[idx][idx_A[0]] == 0:
+                            tp_a0 += 1
+                    elif predicted_cls == 1 and test.iloc[idx][idx_y[0]] == 0:
+                        case = 1  # fp
+                        fp += 1
+                        if test.iloc[idx][idx_A[0]] == 0:
+                            fp_a0 += 1
+                    elif predicted_cls == 0 and test.iloc[idx][idx_y[0]] == 1:
+                        case = 2  # fn
+                        fn += 1
+                        if test.iloc[idx][idx_A[0]] == 0:
+                            fn_a0 += 1
+                    else:
+                        case = 3  # tn
+                        tn += 1
+                        if test.iloc[idx][idx_A[0]] == 0:
+                            tn_a0 += 1
+
+                precision = 0 if tp + fp == 0 else tp / (tp + fp)
+                recall = 0 if tp + fn == 0 else tp / (tp + fn)
+                accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+                fpr = 0 if fp + tn == 0 else fp / (fp + tn)
+                fnr = 0 if fn + tp == 0 else fn / (fn + tp)
+
+                fp_a1, fn_a1, tp_a1, tn_a1 = fp - fp_a0, fn - fn_a0, tp - tp_a0, tn - tn_a0
+                rate_fp_a0 = 0 if fp_a0 + tn_a0 == 0 else fp_a0 / (fp_a0 + tn_a0)
+                rate_fn_a0 = 0 if fn_a0 + tp_a0 == 0 else fn_a0 / (fn_a0 + tp_a0)
+                rate_fp_a1 = 0 if fp_a1 + tn_a1 == 0 else fp_a1 / (fp_a1 + tn_a1)
+                rate_fn_a1 = 0 if fn_a1 + tp_a1 == 0 else fn_a1 / (fn_a1 + tp_a1)
+
+                disp_fn, disp_fp = abs(rate_fn_a0 - rate_fn_a1), abs(rate_fp_a0 - rate_fp_a1)
+                att_type = 1  # race
+                # att_type = 2  # gender
+                # print('disp_fn,disp_fp,threshold,precision,recall,fpr,fnr,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type')
+                print('{:.5f},{:.5f},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}'.format(disp_fn, disp_fp, threshold,
+                                                                                precision, recall, fpr, fnr, accuracy,
+                                                                                tp_a0, tp_a1, fp_a0, fp_a1,
+                                                                                fn_a0, fn_a1, tn_a0, tn_a1, att_type),
+                                                                                file=fout)
+
+
+
+
+            # for threshold in thresholds:
+            #     predicted_cls = 1 if y_score[1] >= threshold else 0
+            #
+            # disparity_train = self.compute_FP(test[idx_A].T.squeeze(), test[idx_y].T.squeeze(),
+            #                                   weighted_preds)
+            # error_train = self.compute_error(test[idx_y].T.squeeze(), weighted_preds)
+            #
+            # print("{},{},{}".format(eps, disparity_train, error_train))
+            # print("{},{},{}".format(eps, disparity_train, error_train), file=f_output)
+
+
+    def analysis_on_compas_data(self):
+        # distribution of race and label
+
+        # precision-recall trade off
+        train, test, idx_X, idx_A, idx_y, data_name = Compas().create_data()
+        print(len(idx_X), len(idx_A), len(idx_y))
+        data = pd.concat([train, test])
+        print(train.shape, test.shape, data.shape)
+
+        y0 = data[data[idx_y[0]] == 0]  # 5099 is_not_recid
+        y1 = data[data[idx_y[0]] == 1]  # 2819 is_recid
+        print(y0.shape, y1.shape)
+
+        # white 1, black 0
+        a0 = data[data[idx_A[0]] == 0]  # 4671 black
+        a1 = data[data[idx_A[0]] == 1]  # 3247 white
+        print(a0.shape, a1.shape)
+        # female: 1675, male: 6243
+
+        clf = LogisticRegression()  # default P>0.5
+        # clf = RandomForestClassifier()
+        clf.fit(train[idx_X+idx_A], train[idx_y])
+
+        y_pred = clf.predict(test[idx_X+idx_A])
+        y_pred_prob = clf.predict_proba(test[idx_X+idx_A])
+
+        print(y_pred.shape)
+        tn, fp, fn, tp = confusion_matrix(test[idx_y[0]], y_pred, [0, 1]).ravel()
+        accuracy = (tp + tn) / (tn + fp + fn + tp)
+        print(accuracy)
+
+        thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+        filename = 'compas.csv'
+        f_output = open(filename, 'w')
+        for threshold in thresholds:
+            list_Y_pred = []
+
+            for score in y_pred_prob:
+                list_Y_pred.append(1 if score[1] >= threshold else 0)
+
+            threshold = str(round(threshold, self.decimal))
+
+            # Predicting damaging edits
+            tn, fp, fn, tp = confusion_matrix(y_true=test[idx_y[0]], y_pred=list_Y_pred).ravel()
+            rate_fp = fp / (fp + tn)
+            rate_tp = tp / (tp + fn)  # sensitivity/recall/true positive rates
+            rate_fn = fn / (fn + tp)
+            rate_tn = tn / (tn + fp)  # specificity/true negative rates
+            precision = 0 if tp + fp == 0 else tp / (tp + fp)
+            recall = 0 if tp + fn == 0 else tp / (tp + fn)
+
+            # print(rate_fn, rate_fp)
+
+            # print("{},{},{}".format(threshold, recall, precision), file=f_output)
+            print("{},{},{}".format(threshold, rate_fp, rate_fn), file=f_output)
+            # print("{},{},{}".format(threshold, recall, precision))
+
+        f_output.close()
+        self.plot_charts(filename)
+
+    def learner_normalized(self, x, a, y, learner, lamb0, lamb1):
+
+        ones = np.ones(y.shape)
+        p0, p1 = len(ones[(a == 1) & (y == 0)]) / len(ones), len(ones[(a == 1) & (y == 1)]) / len(ones)
+        p00, p11 = len(y[y == 0]) / len(y), len(y[y == 1]) / len(y)
+
+        vec0, vec1 = ((y == 0) & (a == 1)).astype(int), ((y == 1) & (a == 1)).astype(int)
+        vec00, vec11 = (y == 0).astype(int), (y == 1).astype(int)
+
+        cost1 = (1 - y) + lamb0 * (vec0 / p0 - vec00 / p00)
+        cost0 = y + lamb1 * (vec1 / p1 - vec11 / p11)
+        W = abs(cost0 - cost1)
+        Y = 1 * (cost0 > cost1)
+
+        learner.fit(x, Y, W)
+        return learner
+
+    def learner_non_normalized(self, x, a, y, learner, lamb0, lamb1):
+        vec0, vec1 = ((y == 0) & (a == 1)).astype(int), ((y == 1) & (a == 1)).astype(int)
+        vec00, vec11 = (y == 0).astype(int), (y == 1).astype(int)
+
+        cost1 = (1 - y) + lamb1 * (vec0 - vec00)
+        cost0 = y + lamb0 * (vec1 - vec11)
+        W = abs(cost0 - cost1)
+        Y = 1 * (cost0 > cost1)
+
+        learner.fit(x, Y, W)
+        return learner
+
+    def lambs_tri(self):
+        train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data()
+        # type2 sex
+        filename = 'dataset/non_normalized_pareto_t1.csv'
+        f_output = open(filename, 'w')
+        x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
+
+        # read the points on the pareto curve
+        tuples = self.plot_charts_quad()
+
+        for lamb0 in self.list_eps:
+            for lamb1 in self.list_eps:
+                tup = str(lamb0)+str(lamb1)
+                if tup not in tuples:
+                    continue
+
+                clf = self.learner_non_normalized(x, a, y, LogisticRegression(), lamb0, lamb1)
+                # y_pred = clf.predict(data[idx_X])
+                pred_prob_y = clf.predict_proba(data[idx_X])[:, 1]
+
+                # thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+                thresholds = [0.5]
+                for threshold in thresholds:
+                    y_pred = np.where(pred_prob_y >= threshold, 1, 0)
+                    tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
+
+                    # disparity_train = self.compute_FP(data[idx_A].T.squeeze(), data[idx_y].T.squeeze(), pred_prob_y)
+                    # error_train = self.compute_error(data[idx_y].T.squeeze(), pred_prob_y)
+                    error_train = sum(np.abs(y - y_pred)) / len(y)
+
+                    # disparity for the two groups
+                    fpr, fnr = fp / (fp+tn), fn / (fn + tp)
+                    precision = 0 if tp + fp == 0 else tp / (tp + fp)
+                    recall = 0 if tp + fn == 0 else tp / (tp + fn)
+                    accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+                    y0, y1 = y[a == 0], y[a == 1]
+                    y0_pred, y1_pred = y_pred[a == 0], y_pred[a == 1]
+
+                    tn0, fp0, fn0, tp0 = confusion_matrix(y0, y0_pred, [0, 1]).ravel()
+                    tn1, fp1, fn1, tp1 = confusion_matrix(y1, y1_pred, [0, 1]).ravel()
+                    fpr0, fpr1 = fp0 / (fp0 + tn0), fp1 / (fp1 + tn1)
+                    fnr0, fnr1 = fn0 / (fn0 + tp0), fn1 / (fn1 + tp1)
+
+                    disparity_fpr = max(abs(fpr-fpr0), abs(fpr-fpr1))
+                    disparity_fnr = max(abs(fnr - fnr0), abs(fnr - fnr1))
+
+                    # disp_fn,disp_fp,threshold,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+                    print("{:.5f},{:.5f},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},1".format(
+                        disparity_fnr, disparity_fpr, threshold,
+                        precision, recall,
+                        fpr, fnr, accuracy,
+                        tp0, tp1, fp0, fp1,
+                        fn0, fn1, tn0, tn1), file=f_output)
+
+                    # lamb0,lamb1,threshold,disp_fn,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+                    # print(
+                    #     "{},{},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},1".format(
+                    #         lamb0, lamb1, threshold, disparity_fnr, disparity_fpr,
+                    #         precision, recall,
+                    #         fpr, fnr, accuracy,
+                    #         tp0, tp1, fp0, fp1,
+                    #         fn0, fn1, tn0, tn1), file=f_output)
+
+                    print("{},{},{:.3f},{:.5f},{:.5f}".format(lamb0, lamb1, threshold, disparity_fpr, error_train))
+                    # print("{},{},{}".format(lamb0, disparity_fpr, error_train), file=f_output)
+
+        f_output.close()
+        # self.plot_charts(filename)
+
+    def learner_non_normalized_abs(self, x, a, y, learner, lamb0, lamb1):
+        vec0, vec00 = ((y == 0) & (a == 1)).astype(int), ((y == 0) & (a == 0)).astype(int)
+        vec1, vec11 = ((y == 1) & (a == 1)).astype(int), ((y == 1) & (a == 0)).astype(int)
+
+        cost1 = (1 - y) + lamb1 * (vec0 - vec00)
+        cost0 = y + lamb0 * (vec1 - vec11)
+        W = abs(cost0 - cost1)
+        Y = 1 * (cost0 > cost1)
+
+        learner.fit(x, Y, W)
+        return learner
+
+    def lambs_abs(self):
+
+        a_type = 'race'
+        train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
+        # a_type: 1 race, 2, gender
+        a_type = 1 if a_type == 'race' else 2
+
+        filename = 'dataset/non_normalized_quad{}.csv'.format(a_type)
+        f_output = open(filename, 'w')
+        x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
+
+        # read the points on the pareto curve
+        tuples = self.plot_charts_quad()
+
+        range_lamb0 = self.list_eps  # for fp
+        range_lamb1 = [0]  # for fn
+        for lamb0 in range_lamb0:
+            for lamb1 in range_lamb1:
+
+                tup = str(lamb0)+str(lamb1)
+                if tup not in tuples:
+                    continue
+
+                clf = self.learner_non_normalized_abs(x, a, y, LogisticRegression(), lamb0, lamb1)
+                # y_pred = clf.predict(data[idx_X])
+                pred_prob_y = clf.predict_proba(data[idx_X])[:, 1]
+
+                # thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+                thresholds = [0.5]
+                for threshold in thresholds:
+                    y_pred = np.where(pred_prob_y >= threshold, 1, 0)
+                    tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
+
+                    # disparity_train = self.compute_FP(data[idx_A].T.squeeze(), data[idx_y].T.squeeze(), pred_prob_y)
+                    # error_train = self.compute_error(data[idx_y].T.squeeze(), pred_prob_y)
+                    error_train = sum(np.abs(y - y_pred)) / len(y)
+
+                    # disparity for the two groups
+                    fpr, fnr = fp / (fp+tn), fn / (fn + tp)
+                    precision = 0 if tp + fp == 0 else tp / (tp + fp)
+                    recall = 0 if tp + fn == 0 else tp / (tp + fn)
+                    accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+                    y0, y1 = y[a == 0], y[a == 1]
+                    y0_pred, y1_pred = y_pred[a == 0], y_pred[a == 1]
+
+                    tn0, fp0, fn0, tp0 = confusion_matrix(y0, y0_pred, [0, 1]).ravel()
+                    tn1, fp1, fn1, tp1 = confusion_matrix(y1, y1_pred, [0, 1]).ravel()
+                    fpr0, fpr1 = fp0 / (fp0 + tn0), fp1 / (fp1 + tn1)
+                    fnr0, fnr1 = fn0 / (fn0 + tp0), fn1 / (fn1 + tp1)
+
+                    # disparity for both fn and fp
+                    disparity = max(abs(fp0 - fp1) / 2, abs(fn0 - fn1) / 2)
+
+                    # disparity for only fp
+                    disparity = abs(fp0 - fp1) / 2
+                    # disparity_fpr = abs(fp0 - fp1) / 2
+                    # disparity_fpr = abs(fn0 - fn1) / 2
+                    # disparity_fpr = max(abs(fpr-fpr0), abs(fpr-fpr1))
+                    # disparity_fnr = max(abs(fnr - fnr0), abs(fnr - fnr1))
+
+                    # disp_fn,disp_fp,threshold,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+                    # print("{},{:.5f},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
+                    #     lamb0, disparity_fpr, threshold,
+                    #     precision, recall,
+                    #     fpr, fnr, accuracy,
+                    #     tp0, tp1, fp0, fp1,
+                    #     fn0, fn1, tn0, tn1, a_type), file=f_output)
+
+                    # lamb0,lamb1,threshold,disp_fn,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+                    # print(
+                    #     "{},{},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
+                    #         lamb0, lamb1, threshold, disparity_fnr, disparity_fpr,
+                    #         precision, recall,
+                    #         fpr, fnr, accuracy,
+                    #         tp0, tp1, fp0, fp1,
+                    #         fn0, fn1, tn0, tn1, a_type), file=f_output)
+
+                    print("{},{},{:.3f},{:.5f},{:.5f}".format(lamb0, lamb1, threshold, disparity, error_train))
+                    # print("{},{},{},{}".format(lamb0, lamb1, disparity, error_train), file=f_output)
+                    print("{},{},{}".format(lamb0, disparity, error_train), file=f_output)
+
+        f_output.close()
+        self.plot_charts(filename)
+
+    def lambs_abs_pareto(self):
+
+        a_type = 'sex'
+        train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
+        # a_type: 1 race, 2, gender
+        a_type = 1 if a_type == 'race' else 2
+
+        filename = 'dataset/non_normalized_pareto_thred_t{}.csv'.format(a_type)
+        f_output = open(filename, 'w')
+        x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
+
+        # read the points on the pareto curve
+        tuples = self.plot_charts_quad()
+        # creating the entire curve ...
+        range_lamb0 = self.list_eps  # for fp
+        range_lamb1 = [0]  # for fn
+
+        dX_vals = {}
+        d_keys_vals = {}
+        thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+        for threshold in thresholds:
+            Xs = {}
+            Ys = {}
+            d_pairs_vals = {}
+            for lamb0 in range_lamb0:
+                for lamb1 in range_lamb1:
+                    clf = self.learner_non_normalized_abs(x, a, y, LogisticRegression(), lamb0, lamb1)
+                    pred_prob_y = clf.predict_proba(data[idx_X])[:, 1]
+
+                    y_pred = np.where(pred_prob_y >= threshold, 1, 0)
+                    tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
+
+                    error = sum(np.abs(y - y_pred)) / len(y)
+
+                    # disparity for the two groups
+                    fpr, fnr = fp / (fp + tn), fn / (fn + tp)
+                    precision = 0 if tp + fp == 0 else tp / (tp + fp)
+                    recall = 0 if tp + fn == 0 else tp / (tp + fn)
+                    accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+                    y0, y1 = y[a == 0], y[a == 1]
+                    y0_pred, y1_pred = y_pred[a == 0], y_pred[a == 1]
+
+                    tn0, fp0, fn0, tp0 = confusion_matrix(y0, y0_pred, [0, 1]).ravel()
+                    tn1, fp1, fn1, tp1 = confusion_matrix(y1, y1_pred, [0, 1]).ravel()
+                    fpr0, fpr1 = fp0 / (fp0 + tn0), fp1 / (fp1 + tn1)
+                    fnr0, fnr1 = fn0 / (fn0 + tp0), fn1 / (fn1 + tp1)
+
+                    # disparity for only fp
+                    disparity = abs(fp0 - fp1) / 2
+
+                    # print("{},{},{},{}".format(lamb0, lamb1, disparity, error), file=f_output)
+
+                    Xs[str(lamb0) + str(lamb1)] = disparity
+                    Ys[str(lamb0) + str(lamb1)] = error
+                    print("{},{},{},{},{}".format(threshold, lamb0, lamb1, disparity, error))
+                    # threshold,lamb0,lamb1,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+                    vals = "{:.3f},{:.3f},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
+                            threshold, lamb0, lamb1, disparity, error,
+                            precision, recall,
+                            fpr, fnr, accuracy,
+                            tp0, tp1, fp0, fp1,
+                            fn0, fn1, tn0, tn1, a_type)
+                    d_pairs_vals[str(lamb0)+str(lamb1)] = vals
+            # compute pareto curve under this threshold
+            tuples = self.convex_env_train(Xs, Ys)
+
+            # only select data points for this threshold
+            d_sub_pairs_vals = {}
+            for tup in tuples:
+                vals = d_pairs_vals[tup]
+                d_sub_pairs_vals[tup] = vals
+            d_keys_vals[threshold] = d_sub_pairs_vals
+
+        # rescan to print in order of threshold and lamb0
+        for threshold in thresholds:
+            for lamb0 in range_lamb0:
+                for lamb1 in range_lamb1:
+                    d_sub_pairs_vals = d_keys_vals[threshold]
+                    tup = str(lamb0) + str(lamb1)
+                    if tup in d_sub_pairs_vals:
+                        print(d_sub_pairs_vals[tup], file=f_output)
+        f_output.close()
+
+    def lambs(self):
+        train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data()
+        filename = 'dataset/non_normalized_quad.csv'
+        f_output = open(filename, 'w')
+        x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
+        for lamb0 in self.list_eps:
+            for lamb1 in self.list_eps:
+                clf = self.learner_non_normalized(x, a, y, LogisticRegression(), lamb0, lamb1)
+                y_pred = clf.predict(data[idx_X])
+                pred_prob_y = clf.predict_proba(data[idx_X])[:, 1]
+
+                tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
+
+                # disparity_train = self.compute_FP(data[idx_A].T.squeeze(), data[idx_y].T.squeeze(), pred_prob_y)
+                # error_train = self.compute_error(data[idx_y].T.squeeze(), pred_prob_y)
+                error_train = sum(np.abs(y - y_pred)) / len(y)
+
+                # disparity for the two groups
+                fpr, fnr = fp / (fp+tn), fn / (fn + tp)
+                precision = 0 if tp + fp == 0 else tp / (tp + fp)
+                recall = 0 if tp + fn == 0 else tp / (tp + fn)
+                accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+                y0, y1 = y[a == 0], y[a == 1]
+                y0_pred, y1_pred = y_pred[a == 0], y_pred[a == 1]
+
+                tn0, fp0, fn0, tp0 = confusion_matrix(y0, y0_pred, [0, 1]).ravel()
+                tn1, fp1, fn1, tp1 = confusion_matrix(y1, y1_pred, [0, 1]).ravel()
+                fpr0, fpr1 = fp0 / (fp0 + tn0), fp1 / (fp1 + tn1)
+                fnr0, fnr1 = fn0 / (fn0 + tp0), fn1 / (fn1 + tp1)
+
+                disparity_fpr = max(abs(fpr-fpr0), abs(fpr-fpr1))
+                disparity_fnr = max(abs(fnr - fnr0), abs(fnr - fnr1))
+
+                # print("{},{},{:.3f},{:.5f},{:.5f}".format(lamb0, lamb1, threshold, disparity_fpr, error_train))
+                print("{},{},{},{}".format(lamb0, lamb1, disparity_fpr, error_train))
+                print("{},{},{},{}".format(lamb0, lamb1, disparity_fpr, error_train), file=f_output)
+
+        f_output.close()
+        self.plot_charts_quad(filename)
+
+    def convex_env_train(self, Xs, Ys):
+        """
+        Identify the convex envelope on the set of models
+        from the train set.
+        """
+        # Sort the list in either ascending or descending order of the
+        # items values in Xs
+        key_X_pairs = sorted(Xs.items(), key=lambda x: x[1],
+                             reverse=False)  # this is a list of (key, val) pairs
+        # Start the Pareto frontier with the first key value in the sorted list
+        p_front = [key_X_pairs[0][0]]
+        # Loop through the sorted list
+        count = 0
+        for (key, X) in key_X_pairs:
+            if Ys[key] <= Ys[p_front[-1]]:  # Look for lower values of Y
+                if count > 0:
+                    p_front.append(key)
+            count = count + 1
+        return self.remove_interior(p_front, Xs, Ys)
+
+    def remove_interior(self, p_front, Xs, Ys):
+        if len(p_front) < 3:
+            return p_front
+        [k1, k2, k3] = p_front[:3]
+        x1 = Xs[k1]
+        y1 = Ys[k1]
+        x2 = Xs[k2]
+        y2 = Ys[k2]
+        x3 = Xs[k3]
+        y3 = Ys[k3]
+        # compute the linear interpolation between 1 and 3 when x = x2
+        if x1 == x3:  # equal values
+            return self.remove_interior([k1] + p_front[3:], Xs, Ys)
+        else:
+            alpha = (x2 - x1) / (x3 - x1)
+            y_hat = y1 - (y1 - y3) * alpha
+            if y_hat >= y2:  # keep the triplet
+                return [k1] + self.remove_interior(p_front[1:], Xs, Ys)
+            else:  # remove 2
+                return self.remove_interior([k1, k3] + p_front[3:], Xs, Ys)
+
     def replicate_results(self):
 
-        # Adult(), Campus(), Dutch(), Lawschool(), ParserWiki()
+        # Adult(), Compas(), Dutch(), Lawschool(), ParserWiki()
         for obj in [ParserWiki()]:
 
-            train, test, idx_X, idx_A, idx_y, data_name = obj.create_data()
-            print(data_name, train.shape, test.shape, len(idx_X), len(idx_A), len(idx_y))
+            train, test, data, idx_X, idx_A, idx_y, data_name = obj.create_data()
+            # print(data_name, train.shape, test.shape, len(idx_X), len(idx_A), len(idx_y))
+            # print(train[idx_X].shape, train[idx_A].shape, train[idx_y].shape)
 
-            train_full = test
+            clf = RandomForestClassifier()
+            clf.fit(train[idx_X], train[idx_y])
+            pred = clf.predict(test[idx_X])
+            tn0, fp0, fn0, tp0 = confusion_matrix(test[idx_y], pred).ravel()
+            # tn0, fp0, fn0, tp0 = confusion_matrix(y0, yp_0, [0, 1]).ravel()
+            # print(tn0, fp0, fn0, tp0)  # 1494 4 1 379  # 9301 32 298 75
+
+            train_full = data
             # To equalize FP rate: make all the positive examples (y=1) belong to the same group (a = 1)
             # train_adjusted = train.drop(train[(train.gender == 0) & (train.label == 1)].index)
             # train.loc[train[idx_y[0]] == 1, idx_A[0]] = 0
-            train_adjusted = train
+            # train.loc[train[idx_y[0]] == 1, idx_A[0]] = 1
+
+            # y1 = train[idx_y[0]] == 1
+            # a1 = train[idx_A[0]] == 1
+            # print(train[y1 & a1].shape)
+            #
+            # y0 = train[idx_y[0]] == 0
+            # a1 = train[idx_A[0]] == 1
+            # print(train[y0 & a1].shape)
+            #
+            # y1 = train[idx_y[0]] == 1
+            # a0 = train[idx_A[0]] == 0
+            # print(train[y1 & a0].shape)
+            #
+            # y0 = train[idx_y[0]] == 0
+            # a1 = train[idx_A[0]] == 1
+            # print(train[y0 & a1].shape)
+
+            a0 = data[data[idx_A[1]] == 0]
+            a1 = data[data[idx_A[1]] == 1]
+            print(a0.shape, a1.shape)  # 455 v.s. 296
+
+            y0 = train[train[idx_y[0]] == 0]
+            y1 = train[train[idx_y[0]] == 1]
+            print(y0.shape, y1.shape)  # 359 v.s. 392
+
+            train_adjusted = data
 
             filename = 'dataset/plot_{}.csv'.format(data_name)
             print(filename)
             f_output = open(filename, 'w')
             for eps in self.list_eps:
-                res = red.expgrad(dataX=train_adjusted[idx_X],
-                                  dataA=train_adjusted[idx_A].T.squeeze(),
-                                  dataY=train_adjusted[idx_y].T.squeeze(),
-                                  # learner=LogisticRegression(), cons=moments.EO(), eps=eps)
-                                  learner=RandomForestClassifier(), cons=moments.EO(), eps=eps)
+                x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
+
+                # res = red.expgrad(dataX=train_adjusted[idx_X],
+                #                   dataA=train_adjusted[idx_A].T.squeeze(),
+                #                   dataY=train_adjusted[idx_y].T.squeeze(),
+                #                   learner=LogisticRegression(), cons=moments.EO(), eps=eps)
+                res = red.expgrad(x, a, y,
+                                  learner=LogisticRegression(), cons=moments.EO(), eps=eps)
+                                  # learner=GradientBoostingClassifier(learning_rate=0.01, max_depth=7, max_features="sqrt",
+                                  #                            n_estimators=700),
+                                  # learner=RandomForestClassifier(),
+                                  # cons=moments.EO(), eps=eps)
 
                 weighted_preds = self.weighted_predictions(res, train_full[idx_X])
-                # disparity_train = self.compute_FP(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(),
+
+                # print(type(weighted_preds))
+                # y_pred = np.where(weighted_preds > 0.5, 1, 0)
+                # tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
+
+                ########################################################################
+                # # weighted_preds = int(weighted_preds)  # to int ...
+                # print(type(weighted_preds))
+                # weighted_preds = weighted_preds.astype('int32')
+                # yp_0 = weighted_preds[train_full[idx_A[0]] == 0]
+                # yp_1 = weighted_preds[train_full[idx_A[0]] == 1]
+                #
+                # y0 = train_full[idx_y][train_full[idx_A[0]] == 0]
+                # y1 = train_full[idx_y][train_full[idx_A[0]] == 1]
+                #
+                # print(yp_0.shape, yp_1.shape, y0.shape, y1.shape)
+                #
+                # tn0, fp0, fn0, tp0 = confusion_matrix(y0, yp_0, [0, 1]).ravel()
+                # tn1, fp1, fn1, tp1 = confusion_matrix(y1, yp_1, [0, 1]).ravel()
+                # print(tn0, fp0, fn0, tp0)
+                # print(tn1, fp1, fn1, tp1)
+                # disparity_fpr = abs(fp0 / (fp0 + tn0) - fp1 / (fp1 + tn1))
+                # disparity_fnr = abs(fn0 / (fn0 + tp0) - fn1 / (fn1 + tp1))
+                # error = (fp0 + fn0 + fp1 + fn1) / (tn0 + fp0 + fn0 + tp0 + tn1 + fp1 + fn1 + tp1)
+                # print(eps, disparity_fpr, disparity_fnr, error)
+
+                # compute the values ...
+
+                ########################################################################
+
+                disparity_train = self.compute_FP(a, y, weighted_preds)
+                # disparity_train = self.compute_FN(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(),
                 #                                   weighted_preds)
-                disparity_train = self.compute_FN(train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze(),
-                                                  weighted_preds)
-                error_train = self.compute_error(train_full[idx_y].T.squeeze(), weighted_preds)
+                error_train = self.compute_error(y, weighted_preds)
 
                 print("{},{},{}".format(eps, disparity_train, error_train))
                 print("{},{},{}".format(eps, disparity_train, error_train), file=f_output)
 
-                # Q = res._asdict()["best_classifier"]
-                # disp = moments.EO()
-                # disp.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+                ###########################################################################
+                # # binary prediction
+                # error_train = sum(np.abs(y - y_pred)) / len(y)
                 #
-                # error = moments.MisclassError()
-                # error.init(train_full[idx_X], train_full[idx_A].T.squeeze(), train_full[idx_y].T.squeeze())
+                # # disparity for the two groups
+                # fpr = fp / (fp + tn)
                 #
-                # dispVal = disp.gamma(Q).max()
-                # errorVal = error.gamma(Q)[0]
-                # print("{},{},{}".format(eps, dispVal, errorVal))
-                # print("{},{},{}".format(eps, dispVal, errorVal), file=f_output)
+                # y0, y1 = y[a == 0], y[a == 1]
+                # y0_pred, y1_pred = y_pred[a == 0], y_pred[a == 1]
+                #
+                # tn0, fp0, fn0, tp0 = confusion_matrix(y0, y0_pred, [0, 1]).ravel()
+                # tn1, fp1, fn1, tp1 = confusion_matrix(y1, y1_pred, [0, 1]).ravel()
+                # fpr0 = fp0 / (fp0 + tn0)
+                # fpr1 = fp1 / (fp1 + tn1)
+                #
+                # disparity_train = max(abs(fpr - fpr0), abs(fpr - fpr1))
+                # print("{},{},{}".format(eps, disparity_train, error_train))
+                # print("{},{},{}".format(eps, disparity_train, error_train), file=f_output)
 
             f_output.close()
             self.plot_charts(filename)
@@ -570,8 +1348,17 @@ def main():
     # runner.run_train_test_split_baseline2()
     # runner.plot_charts()
 
-    runner.replicate_results()
-    # runner.plot_charts()
+    # runner.replicate_results()
+    # runner.lambs()
+    # runner.plot_charts_quad()
+    # runner.lambs_tri()
+    # runner.lambs_abs()
+    # runner.lambs_abs_pareto()
+
+    # runner.plot_charts_multiple()
+    # runner.analysis_on_compas_data()
+    # runner.generate_plot_data()
+    runner.generate_plot_data_lg()
 
 if __name__ == '__main__':
     main()

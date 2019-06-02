@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 
 from datetime import datetime
 
-class Campus:
+class Compas:
 
     def __init__(self):
         self.DATA_DIR='./data/'
@@ -70,20 +70,21 @@ class Campus:
     def create_train_test(self):
         random_state = np.random.RandomState(12)
         data = self.load_data()
-        train_data, test_data = train_test_split(data, test_size=0.5, random_state=random_state)
+        train_data, test_data = train_test_split(data, test_size=0.3, random_state=random_state)
         train_data = train_data.reset_index()
         test_data = test_data.reset_index()
-        return train_data, test_data
+        return train_data, test_data, data
 
-    def create_data(self):
-        train, test = self.create_train_test()
+    def create_data(self, a_type):
+        train, test, data = self.create_train_test()
 
         for col in train.columns:
             if train[col].dtype.name == 'object' or train[col].dtype.name == 'category':
                 train[col] = train[col].astype('category').cat.codes
                 test[col] = test[col].astype('category').cat.codes
+                data[col] = data[col].astype('category').cat.codes
 
-        features = ['sex',
+        features = [
             'age',
             'age_cat',
             'juv_fel_count',
@@ -100,7 +101,14 @@ class Campus:
             'c_charge_degree',
             'days_between_jail_in_out']
 
-        protected_attribute = ['race']
+        protected_attribute = [a_type]
+        if a_type == 'race':
+            features.insert(0, 'sex')
+        elif a_type == 'sex':
+            features.insert(0, 'race')
+        else:
+            features.insert(0, 'race')
+            features.insert(0, 'sex')
         label = ['label']
 
-        return train, test, features, protected_attribute, label, "compas"
+        return train, test, data, features, protected_attribute, label, "compas"

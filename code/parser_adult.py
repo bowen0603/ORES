@@ -66,7 +66,7 @@ class Adult:
             test_data = self.read_data('dataset/data_adult/adult.all')
         else:
             data = self.read_data('dataset/data_adult/adult.all')
-            train_data, test_data = train_test_split(data, test_size=0.25, random_state=random_state)
+            train_data, test_data = train_test_split(data, test_size=0.3, random_state=random_state)
             train_data = train_data.reset_index()
             test_data = test_data.reset_index()
 

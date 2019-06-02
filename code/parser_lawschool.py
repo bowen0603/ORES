@@ -167,10 +167,10 @@ class Lawschool:
         train_data, test_data = train_test_split(data,test_size=0.25,random_state=random_state)
         train_data = train_data.reset_index()
         test_data = test_data.reset_index()
-        return train_data, test_data
+        return train_data, test_data, data
 
     def create_data(self):
-        train, test = self.create_train_test()
+        train, test, data = self.create_train_test()
 
         for col in train.columns:
             if train[col].dtype.name == 'object' or train[col].dtype.name == 'category':
@@ -194,4 +194,4 @@ class Lawschool:
         protected_attribute = ['race']
         label = ['label']
 
-        return train, test, features, protected_attribute, label, "lawschool"
+        return train, test, data, features, protected_attribute, label, "lawschool"

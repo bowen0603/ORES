@@ -48,7 +48,7 @@ class AccuracyTradeOffs:
         reader = ParserWiki()
         # reader.parse_data()
         reader.read_from_file_np()
-        self.train, self.test, self.idx_X, self.idx_A, self.idx_y = reader.create_data()
+        # self.train, self.test, self.idx_X, self.idx_A, self.idx_y = reader.create_data()
 
         # TODO: no rescaling on boolean variables..
         # self.data_x = self.data_rescale(reader.data_x)
@@ -175,61 +175,88 @@ class AccuracyTradeOffs:
                 dict_specificity_badfaith[threshold] += rate_tn
 
         # write fn and fp rates to the disk
+        pair = 0
         f_output = open("{}.csv".format(self.plot_output), 'w')
         for threshold in thresholds:
+            # precision & recall
+            threshold = str(round(threshold, self.decimal))
+            # dict_rates_fp_damaging[threshold] /= self.n_folds
+            # dict_rates_fn_damaging[threshold] /= self.n_folds
+            # dict_rates_fp_badfaith[threshold] /= self.n_folds
+            # dict_rates_fn_badfaith[threshold] /= self.n_folds
+
+            dict_sensitivity_damaging[threshold] /= self.n_folds
+            dict_precision_damaging[threshold] /= self.n_folds
+
+            print("{},{},{:.5f},{:.5f}".format(pair, threshold, dict_precision_damaging[threshold],
+                                               dict_sensitivity_damaging[threshold]), file=f_output)
+
+        pair = 1
+        for threshold in thresholds:
+            # fpr & fnr
             threshold = str(round(threshold, self.decimal))
             dict_rates_fp_damaging[threshold] /= self.n_folds
             dict_rates_fn_damaging[threshold] /= self.n_folds
-            dict_rates_fp_badfaith[threshold] /= self.n_folds
-            dict_rates_fn_badfaith[threshold] /= self.n_folds
 
-            dict_sensitivity_damaging[threshold] /= self.n_folds
-            dict_specificity_damaging[threshold] /= self.n_folds
+            print("{},{},{:.5f},{:.5f}".format(pair, threshold, dict_rates_fp_damaging[threshold],
+                                               dict_rates_fn_damaging[threshold]), file=f_output)
 
-            print("{},{:.5f},{:.5f},{:.5f},{:.5f}".format(threshold,
-                                                          dict_rates_fp_damaging[threshold],
-                                                          dict_rates_fn_damaging[threshold],
-                                                          dict_rates_fp_badfaith[threshold],
-                                                          dict_rates_fn_badfaith[threshold]), file=f_output)
+        # # write fn and fp rates to the disk
+        # f_output = open("{}.csv".format(self.plot_output), 'w')
+        # for threshold in thresholds:
+        #     threshold = str(round(threshold, self.decimal))
+        #     dict_rates_fp_damaging[threshold] /= self.n_folds
+        #     dict_rates_fn_damaging[threshold] /= self.n_folds
+        #     dict_rates_fp_badfaith[threshold] /= self.n_folds
+        #     dict_rates_fn_badfaith[threshold] /= self.n_folds
+        #
+        #     dict_sensitivity_damaging[threshold] /= self.n_folds
+        #     dict_specificity_damaging[threshold] /= self.n_folds
+        #
+        #     print("{},{:.5f},{:.5f},{:.5f},{:.5f}".format(threshold,
+        #                                                   dict_rates_fp_damaging[threshold],
+        #                                                   dict_rates_fn_damaging[threshold],
+        #                                                   dict_rates_fp_badfaith[threshold],
+        #                                                   dict_rates_fn_badfaith[threshold]), file=f_output)
 
-        # print out detailed evaluation metrics for the two labels
-        print("Label (Damaging)")
-        print("Threshold  Precision  Sensitivity/Recall  Specificity  Accuracy  False Positive  False Negative")
-        for threshold in thresholds:
-            threshold = str(round(threshold, self.decimal))
-            dict_precision_damaging[threshold] /= self.n_folds
-            dict_sensitivity_damaging[threshold] /= self.n_folds  # recall
-            dict_accuracy_damaging[threshold] /= self.n_folds
-            dict_specificity_damaging[threshold] /= self.n_folds
-
-            print("{:.3f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(float(threshold),
-                                                                                  dict_precision_damaging[threshold],
-                                                                                  dict_sensitivity_damaging[threshold],
-                                                                                  dict_specificity_damaging[threshold],
-                                                                                  dict_accuracy_damaging[threshold],
-                                                                                  dict_rates_fp_damaging[threshold],
-                                                                                  dict_rates_fn_damaging[threshold]))
-        print("Label (Bad-faith)")
-        print("Threshold  Precision  Sensitivity/Recall  Specificity  Accuracy  False Positive  False Negative")
-        for threshold in thresholds:
-            threshold = str(round(threshold, self.decimal))
-            dict_precision_badfaith[threshold] /= self.n_folds
-            dict_sensitivity_badfaith[threshold] /= self.n_folds  # recall
-            dict_accuracy_badfaith[threshold] /= self.n_folds
-            dict_specificity_badfaith[threshold] /= self.n_folds
-
-            print("{:.3f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(float(threshold),
-                                                                                  dict_precision_badfaith[threshold],
-                                                                                  dict_sensitivity_badfaith[threshold],
-                                                                                  dict_specificity_badfaith[threshold],
-                                                                                  dict_accuracy_badfaith[threshold],
-                                                                                  dict_rates_fp_badfaith[threshold],
-                                                                                  dict_rates_fn_badfaith[threshold]))
-
-        print("Label(Damaging): ROC_AUC {}\tPR_AUC {}".format(sum(list_roc_auc_damaging) / len(list_roc_auc_damaging),
-                                                              sum(list_pr_auc_damaging) / len(list_pr_auc_damaging)))
-        print("Label(Bad-faith): ROC_AUC {}\tPR_AUC {}".format(sum(list_roc_auc_badfaith) / len(list_roc_auc_badfaith),
-                                                               sum(list_pr_auc_badfaith) / len(list_pr_auc_badfaith)))
+        # # print out detailed evaluation metrics for the two labels
+        # print("Label (Damaging)")
+        # print("Threshold  Precision  Sensitivity/Recall  Specificity  Accuracy  False Positive  False Negative")
+        # for threshold in thresholds:
+        #     threshold = str(round(threshold, self.decimal))
+        #     dict_precision_damaging[threshold] /= self.n_folds
+        #     dict_sensitivity_damaging[threshold] /= self.n_folds  # recall
+        #     dict_accuracy_damaging[threshold] /= self.n_folds
+        #     dict_specificity_damaging[threshold] /= self.n_folds
+        #
+        #     print("{:.3f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(float(threshold),
+        #                                                                           dict_precision_damaging[threshold],
+        #                                                                           dict_sensitivity_damaging[threshold],
+        #                                                                           dict_specificity_damaging[threshold],
+        #                                                                           dict_accuracy_damaging[threshold],
+        #                                                                           dict_rates_fp_damaging[threshold],
+        #                                                                           dict_rates_fn_damaging[threshold]))
+        # print("Label (Bad-faith)")
+        # print("Threshold  Precision  Sensitivity/Recall  Specificity  Accuracy  False Positive  False Negative")
+        # for threshold in thresholds:
+        #     threshold = str(round(threshold, self.decimal))
+        #     dict_precision_badfaith[threshold] /= self.n_folds
+        #     dict_sensitivity_badfaith[threshold] /= self.n_folds  # recall
+        #     dict_accuracy_badfaith[threshold] /= self.n_folds
+        #     dict_specificity_badfaith[threshold] /= self.n_folds
+        #
+        #     print("{:.3f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}\t{:.5f}".format(float(threshold),
+        #                                                                           dict_precision_badfaith[threshold],
+        #                                                                           dict_sensitivity_badfaith[threshold],
+        #                                                                           dict_specificity_badfaith[threshold],
+        #                                                                           dict_accuracy_badfaith[threshold],
+        #                                                                           dict_rates_fp_badfaith[threshold],
+        #                                                                           dict_rates_fn_badfaith[threshold]))
+        #
+        # print("Label(Damaging): ROC_AUC {}\tPR_AUC {}".format(sum(list_roc_auc_damaging) / len(list_roc_auc_damaging),
+        #                                                       sum(list_pr_auc_damaging) / len(list_pr_auc_damaging)))
+        # print("Label(Bad-faith): ROC_AUC {}\tPR_AUC {}".format(sum(list_roc_auc_badfaith) / len(list_roc_auc_badfaith),
+        #                                                        sum(list_pr_auc_badfaith) / len(list_pr_auc_badfaith)))
 
     def plot_charts(self):
         x = []
@@ -495,13 +522,13 @@ class AccuracyTradeOffs:
 
 def main():
     runner = AccuracyTradeOffs()
-    # runner.load_data()
+    runner.load_data()
     # runner.run_cross_validation()
     # runner.plot_charts()
     # runner.plot_all_pairs()
-    # runner.create_individual_visuals()
+    runner.create_individual_visuals()
     # runner.create_individual_visuals_bar()
-    runner.run_train_test_split_baseline2()
+    # runner.run_train_test_split_baseline2()
 
 if __name__ == '__main__':
     main()
