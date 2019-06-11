@@ -70,7 +70,7 @@ class Compas:
     def create_train_test(self):
         random_state = np.random.RandomState(12)
         data = self.load_data()
-        train_data, test_data = train_test_split(data, test_size=0.3, random_state=random_state)
+        train_data, test_data = train_test_split(data, test_size=0.5, random_state=random_state)
         train_data = train_data.reset_index()
         test_data = test_data.reset_index()
         return train_data, test_data, data

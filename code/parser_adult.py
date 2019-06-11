@@ -71,17 +71,18 @@ class Adult:
             test_data = test_data.reset_index()
 
         if args['algorithm'] == 'logistic_regression':
-            return train_data[self.relevant], test_data[self.relevant]
+            return train_data[self.relevant], test_data[self.relevant], train_data[self.relevant]
         else:
-            return train_data, test_data
+            return train_data, test_data, train_data
 
     def create_data(self):
-        train, test = self.create_train_test()
+        train, test, data = self.create_train_test()
 
         for col in train.columns:
             if train[col].dtype.name == 'object' or train[col].dtype.name == 'category':
                 train[col] = train[col].astype('category').cat.codes
                 test[col] = test[col].astype('category').cat.codes
+                data[col] = data[col].astype('category').cat.codes
 
         features = ['marital-status',
             'occupation',
@@ -97,4 +98,4 @@ class Adult:
         protected_attribute = ['gender']
         label = ['label']
 
-        return train, test, features, protected_attribute, label, "adult"
+        return train, test, data, features, protected_attribute, label, "adult"

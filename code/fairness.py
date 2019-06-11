@@ -36,9 +36,10 @@ class PredictionFairness:
         # Disparity FPR: 0.015
         # self.list_eps = [0.001, 0.0025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
         #                  0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.2, 0.3, 0.4, 0.5]
-        self.list_eps = [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+        # self.list_eps = [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
         self.list_eps = np.linspace(-1, 1, 81, endpoint=True)
-        # self.list_eps = np.linspace(-1, 1, 41, endpoint=True)
+        self.list_eps_lamb0 = np.linspace(-1, 1, 41, endpoint=True)
+        self.list_eps_lamb1 = np.linspace(-1, 2, 41, endpoint=True)
         # self.list_eps = np.linspace(-3, 3, 61, endpoint=True)
 
         # self.list_eps = [range(0.01, 0.2, 0.01)]
@@ -639,7 +640,7 @@ class PredictionFairness:
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type='race') # type doesn't matter..
         thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
 
-        fout = open('dataset/non_normalized_pareto_thre_t0.csv', 'w')
+        fout = open('dataset/non_normalized_t0.csv', 'w')
         tp = fp = fn = tn = 0
         tp_a0 = fp_a0 = fn_a0 = tn_a0 = 0
 
@@ -694,12 +695,12 @@ class PredictionFairness:
             # threshold,lamb0,lamb1,disp_fp,error,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
 
             # threshold,lamb0,lamb1,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
-            print("{:.3f},{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
-                threshold, lamb0, lamb1, disp_fp, 1-accuracy,
-                precision, recall,
-                fpr, fnr, accuracy,
-                tp_a0, tp_a1, fp_a0, fp_a1,
-                fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
+            # print("{:.3f},{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
+            #     threshold, lamb0, lamb1, disp_fp, 1-accuracy,
+            #     precision, recall,
+            #     fpr, fnr, accuracy,
+            #     tp_a0, tp_a1, fp_a0, fp_a1,
+            #     fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
             # print(
             #     "{},{},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
             #         lamb0, lamb1, threshold, disp_fn, disp_fp,
@@ -707,6 +708,14 @@ class PredictionFairness:
             #         fpr, fnr, accuracy,
             #         tp_a0, tp_a1, fp_a0, fp_a1,
             #         fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
+            # lamb0,lamb1,threshold,disp,error,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+            print(
+                "{},{},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
+                    lamb0, lamb1, threshold, disp_fp, (1 - accuracy),
+                    precision, recall,
+                    fpr, fnr, accuracy,
+                    tp_a0, tp_a1, fp_a0, fp_a1,
+                    fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
 
     def generate_plot_data(self):
 
@@ -954,8 +963,8 @@ class PredictionFairness:
         vec0, vec00 = ((y == 0) & (a == 1)).astype(int), ((y == 0) & (a == 0)).astype(int)
         vec1, vec11 = ((y == 1) & (a == 1)).astype(int), ((y == 1) & (a == 0)).astype(int)
 
-        cost1 = (1 - y) + lamb1 * (vec0 - vec00)
-        cost0 = y + lamb0 * (vec1 - vec11)
+        cost1 = (1 - y) + lamb1 * (vec0 - vec00)  # should be lamb0 instead ..
+        cost0 = y + lamb0 * lamb1 * (vec1 - vec11)  # lamb0 *
         W = abs(cost0 - cost1)
         Y = 1 * (cost0 > cost1)
 
@@ -966,18 +975,23 @@ class PredictionFairness:
 
         a_type = 'race'
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
+        data = train
         # a_type: 1 race, 2, gender
         a_type = 1 if a_type == 'race' else 2
 
-        filename = 'dataset/non_normalized_t{}.csv'.format(a_type)
+        # filename = 'dataset/non_normalized_smaller_t{}.csv'.format(a_type)
+        filename = 'dataset/non_normalized_2tradeoffs_-1_1.csv'.format(a_type)
+        # filename = 'dataset/non_normalized_0_1.csv'.format(a_type)
+        filename2 = 'dataset/plotting_2tradeoffs_-1_1.csv'
+        f_out_plot = open(filename2, 'w')
         f_output = open(filename, 'w')
         x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
 
         # read the points on the pareto curve
         # tuples = self.plot_charts_quad()
 
-        range_lamb0 = self.list_eps  # for fp
-        range_lamb1 = self.list_eps  # for fn
+        range_lamb0 = self.list_eps_lamb0  # for fp
+        range_lamb1 = self.list_eps_lamb1  # for fn
         # range_lamb1 = [0]  # for fn
         for lamb0 in range_lamb0:
             for lamb1 in range_lamb1:
@@ -990,8 +1004,8 @@ class PredictionFairness:
                 # y_pred = clf.predict(data[idx_X])
                 pred_prob_y = clf.predict_proba(data[idx_X])[:, 1]
 
-                # thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
-                thresholds = [0.5]
+                thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+                # thresholds = [0.5]
                 for threshold in thresholds:
                     y_pred = np.where(pred_prob_y >= threshold, 1, 0)
                     tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
@@ -1016,6 +1030,8 @@ class PredictionFairness:
 
                     # disparity for both fn and fp
                     disparity = max(abs(fp0 - fp1), abs(fn0 - fn1))
+                    disp2 = abs(fp0 - fp1) + abs(fn0 - fn1)
+                    error_count = fp + fn
                     # disparity = abs(fp0 - fp1)
 
                     # disparity for only fp
@@ -1035,9 +1051,10 @@ class PredictionFairness:
 
                     # lamb0,lamb1,threshold,disp_fn,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
                     # lamb0,lamb1,threshold,disp,error,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+                    # lamb0,lamb1,threshold,disp,disp2,error,errorcount,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
                     print(
-                        "{:.3f},{:.3f},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
-                            lamb0, lamb1, threshold, disparity, (1-accuracy),
+                        "{:.3f},{:.3f},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
+                            lamb0, lamb1, threshold, disparity, disp2, (1-accuracy), error_count,
                             precision, recall,
                             fpr, fnr, accuracy,
                             tp0, tp1, fp0, fp1,
@@ -1045,10 +1062,10 @@ class PredictionFairness:
 
                     print("{},{},{:.3f},{:.5f},{:.5f}".format(lamb0, lamb1, threshold, disparity, error_train))
                     # print("{},{},{},{}".format(lamb0, lamb1, disparity, error_train), file=f_output)
-                    # print("{},{},{}".format(lamb0, disparity, error_train), file=f_output)
+                    print("{},{},{}".format(lamb0, disparity, error_train), file=f_out_plot)
 
         f_output.close()
-        self.plot_charts(filename)
+        self.plot_charts(filename2)
 
     def lambs_abs_pareto(self):
 
@@ -1277,8 +1294,8 @@ class PredictionFairness:
             # a1 = train[idx_A[0]] == 1
             # print(train[y0 & a1].shape)
 
-            a0 = data[data[idx_A[1]] == 0]
-            a1 = data[data[idx_A[1]] == 1]
+            a0 = data[data[idx_A[0]] == 0]
+            a1 = data[data[idx_A[0]] == 1]
             print(a0.shape, a1.shape)  # 455 v.s. 296
 
             y0 = train[train[idx_y[0]] == 0]
