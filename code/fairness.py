@@ -38,8 +38,8 @@ class PredictionFairness:
         #                  0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.2, 0.3, 0.4, 0.5]
         # self.list_eps = [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
         self.list_eps = np.linspace(-1, 1, 81, endpoint=True)
-        self.list_eps_lamb0 = np.linspace(-1, 1, 41, endpoint=True)
-        self.list_eps_lamb1 = np.linspace(-1, 2, 41, endpoint=True)
+        self.list_eps_lamb0 = np.linspace(-1, 1, 41, endpoint=True) # 41
+        self.list_eps_lamb1 = np.linspace(-1, 1, 41, endpoint=True)
         # self.list_eps = np.linspace(-3, 3, 61, endpoint=True)
 
         # self.list_eps = [range(0.01, 0.2, 0.01)]
@@ -528,7 +528,8 @@ class PredictionFairness:
         # plt.plot(x, y, marker='o')
         # x, y = self.convex_env_train(x, y)
         plt.scatter(x, y, marker='o')
-        plt.show()
+        plt.draw()
+        # plt.show()
 
     def plot_charts_quad(self, filename=None):
         # TODO: check plotting correctness ...
@@ -1174,6 +1175,151 @@ class PredictionFairness:
 
         f_output.close()
 
+
+    def lambs_abs_pareto_curves(self):
+
+        a_type = 'race'
+        train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
+        # a_type: 1 race, 2, gender
+        a_type = 1 if a_type == 'race' else 2
+
+        filename = 'dataset/non_normalized_pareto_curves_t{}.csv'.format(a_type)
+        f_output = open(filename, 'w')
+        x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
+
+        # read the points on the pareto curve
+        # tuples = self.plot_charts_quad()
+        # creating the entire curve ...
+        range_lamb0 = self.list_eps_lamb0  # for fp
+        range_lamb1 = self.list_eps_lamb1  # for fn
+
+        thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+
+        d_thre_to_error_disp_pairs = {}
+        d_thre_error_disp_to_prints = {}
+        for lamb0 in range_lamb0:
+            for lamb1 in range_lamb1:
+                clf = self.learner_non_normalized_abs(x, a, y, LogisticRegression(), lamb0, lamb1)
+                pred_prob_y = clf.predict_proba(data[idx_X])[:, 1]
+
+                for threshold in thresholds:
+                    y_pred = np.where(pred_prob_y >= threshold, 1, 0)
+                    tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
+
+                    error = sum(np.abs(y - y_pred)) / len(y)
+                    # disparity for the two groups
+                    fpr, fnr = fp / (fp + tn), fn / (fn + tp)
+                    precision = 0 if tp + fp == 0 else tp / (tp + fp)
+                    recall = 0 if tp + fn == 0 else tp / (tp + fn)
+                    accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+                    y0, y1 = y[a == 0], y[a == 1]
+                    y0_pred, y1_pred = y_pred[a == 0], y_pred[a == 1]
+
+                    tn0, fp0, fn0, tp0 = confusion_matrix(y0, y0_pred, [0, 1]).ravel()
+                    tn1, fp1, fn1, tp1 = confusion_matrix(y1, y1_pred, [0, 1]).ravel()
+                    fpr0, fpr1 = fp0 / (fp0 + tn0), fp1 / (fp1 + tn1)
+                    fnr0, fnr1 = fn0 / (fn0 + tp0), fn1 / (fn1 + tp1)
+
+                    # disparity for only fp
+                    disparity = max(abs(fp0 - fp1), abs(fn0 - fn1))
+
+                    if threshold not in d_thre_to_error_disp_pairs:
+                        d_thre_to_error_disp_pairs[threshold] = []
+
+                    if (error, disparity) not in d_thre_to_error_disp_pairs[threshold]:
+                        d_thre_to_error_disp_pairs[threshold].append((error, disparity))
+
+                    print("{:.3f},{:.3f},{:.3f},{},{}".format(threshold, lamb0, lamb1, disparity, error))
+                    # threshold,error,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+                    vals = "{:.3f},{:.5f},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
+                            threshold, error, disparity,
+                            precision, recall,
+                            fpr, fnr, accuracy,
+                            tp0, tp1, fp0, fp1,
+                            fn0, fn1, tn0, tn1, a_type)
+                    d_thre_error_disp_to_prints[(threshold, error, disparity)] = vals
+
+        filename_steps = "dataset/pareto_steps_t{}.csv".format(a_type)
+        f_output_steps = open(filename_steps, 'w')
+        for threshold in thresholds:
+            filename_all = 'dataset/plotting_all.csv'
+            filename_pareto = 'dataset/plotting_pareto.csv'
+            f_out_plot_all = open(filename_all, 'w')
+            f_out_plot_pareto = open(filename_pareto, 'w')
+
+            cnt = 0
+            d_cnt_to_disp_error = {}
+            Xs, Ys = {}, {}
+            for (error, disp) in d_thre_to_error_disp_pairs[threshold]:
+                Xs[cnt], Ys[cnt] = disp, error
+                d_cnt_to_disp_error[cnt] = (disp, error)
+                print("{},{},{}".format(cnt, disp, error), file=f_out_plot_all)
+                cnt += 1
+            f_out_plot_all.close()
+            # self.plot_charts(filename_all)
+
+            # compute pareto curve under this threshold
+            keys = self.convex_env_train(Xs, Ys)
+            print('{},{}'.format(threshold, len(keys)), file=f_output_steps)
+            for cnt_key in keys:
+                cnt_key = int(cnt_key)
+                try:
+                    (disp, error) = d_cnt_to_disp_error[cnt_key]
+                    # TODO: compute distance between errors??
+                    # print('{},{},{},{}'.format(threshold, cnt_key, error, disp))
+                except KeyError:
+                    print('error .. {}'.format(cnt_key))
+                print("{},{},{}".format(cnt_key, disp, error), file=f_out_plot_pareto)
+                print('{}'.format(d_thre_error_disp_to_prints[(threshold, error, disp)]), file=f_output)
+
+            f_out_plot_pareto.close()
+            self.plot_charts(filename_pareto)
+        plt.show()
+
+                # todo: print out the values, and also count the values threshold, cnt_pairs len(tuples)
+                # print('{},{},{}'.format(error, len(d_errors[error]), d_errors[error]).replace('[', '').replace(']', '').replace(' ', '').replace('\'', ''), file=f_output)
+
+
+        #     # only select data points for this threshold
+        #     d_sub_pairs_vals = {}
+        #     for tup in tuples:
+        #         vals = d_pairs_vals[tup]
+        #         d_sub_pairs_vals[tup] = vals
+        #     d_keys_vals[threshold] = d_sub_pairs_vals
+        #
+        # # # rescan to print in order of threshold and lamb0
+        # # for threshold in thresholds:
+        # #     for lamb0 in range_lamb0:
+        # #         for lamb1 in range_lamb1:
+        # #             d_sub_pairs_vals = d_keys_vals[threshold]
+        # #             tup = str(lamb0) + str(lamb1)
+        # #             if tup in d_sub_pairs_vals:
+        # #                 print(d_sub_pairs_vals[tup], file=f_output)
+        #
+        # d_errors = {}
+        # l_errors = []
+        # for threshold in thresholds:
+        #     for lamb0 in range_lamb0:
+        #         for lamb1 in range_lamb1:
+        #             tup = str(lamb0) + str(lamb1)
+        #             d_sub_pairs_vals = d_keys_vals[threshold]
+        #             if tup in d_sub_pairs_vals:
+        #                 vals = d_sub_pairs_vals[tup]
+        #                 data = vals.split(',')
+        #                 error = float(data[4])
+        #                 l_errors.append(error)
+        #                 if error not in d_errors:
+        #                     d_errors[error] = ['{:.3f}'.format(threshold)]
+        #                 else:
+        #                     if threshold not in d_errors[error]:
+        #                         d_errors[error].append('{:.3f}'.format(threshold))
+        # l_errors.sort()
+        # for error in l_errors:
+        #     print('{},{},{}'.format(error, len(d_errors[error]), d_errors[error]).replace('[', '').replace(']', '').replace(' ', '').replace('\'', ''), file=f_output)
+
+        f_output.close()
+
     def lambs(self):
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data()
         filename = 'dataset/non_normalized_quad.csv'
@@ -1396,8 +1542,9 @@ def main():
     # runner.lambs()
     # runner.plot_charts_quad()
     # runner.lambs_tri()
-    runner.lambs_abs()
+    # runner.lambs_abs()
     # runner.lambs_abs_pareto()
+    runner.lambs_abs_pareto_curves()
 
     # runner.plot_charts_multiple()
     # runner.analysis_on_compas_data()
