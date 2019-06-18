@@ -4,6 +4,7 @@ from parser_dutch import Dutch
 from parser_lawschool import Lawschool
 from parser_campus import Compas
 from parser_wiki import ParserWiki
+from random import randint
 
 import sys
 from sklearn.preprocessing import scale
@@ -33,6 +34,7 @@ class PredictionFairness:
         self.N = 19412
         self.eps = 0.100
         self.threshold_density = 41  #21
+        self.n_pareto_curve_points = 15
         # Disparity FPR: 0.015
         # self.list_eps = [0.001, 0.0025, 0.005, 0.0075, 0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
         #                  0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.2, 0.3, 0.4, 0.5]
@@ -1178,14 +1180,16 @@ class PredictionFairness:
 
     def lambs_abs_pareto_curves(self):
 
-        a_type = 'race'
+        a_type = 'sex'
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
+        data = train
         # a_type: 1 race, 2, gender
         a_type = 1 if a_type == 'race' else 2
 
         filename = 'dataset/non_normalized_pareto_curves_t{}.csv'.format(a_type)
         f_output = open(filename, 'w')
         x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
+        print(data.shape)
 
         # read the points on the pareto curve
         # tuples = self.plot_charts_quad()
@@ -1195,8 +1199,10 @@ class PredictionFairness:
 
         thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
 
+        # each key threshold is corresponding to a list of error-disp pairs
         d_thre_to_error_disp_pairs = {}
         d_thre_error_disp_to_prints = {}
+        d_models = {}
         for lamb0 in range_lamb0:
             for lamb1 in range_lamb1:
                 clf = self.learner_non_normalized_abs(x, a, y, LogisticRegression(), lamb0, lamb1)
@@ -1226,9 +1232,11 @@ class PredictionFairness:
 
                     if threshold not in d_thre_to_error_disp_pairs:
                         d_thre_to_error_disp_pairs[threshold] = []
+                        d_models[threshold] = []
 
                     if (error, disparity) not in d_thre_to_error_disp_pairs[threshold]:
                         d_thre_to_error_disp_pairs[threshold].append((error, disparity))
+                        d_models[threshold].append(clf)
 
                     print("{:.3f},{:.3f},{:.3f},{},{}".format(threshold, lamb0, lamb1, disparity, error))
                     # threshold,error,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
@@ -1242,17 +1250,21 @@ class PredictionFairness:
 
         filename_steps = "dataset/pareto_steps_t{}.csv".format(a_type)
         f_output_steps = open(filename_steps, 'w')
+        row_idx = 0
         for threshold in thresholds:
             filename_all = 'dataset/plotting_all.csv'
             filename_pareto = 'dataset/plotting_pareto.csv'
             f_out_plot_all = open(filename_all, 'w')
             f_out_plot_pareto = open(filename_pareto, 'w')
 
+            # just use a cnt as key to connect Xs and Ys, and the corresponding model
             cnt = 0
             d_cnt_to_disp_error = {}
             Xs, Ys = {}, {}
+            models = {}
             for (error, disp) in d_thre_to_error_disp_pairs[threshold]:
                 Xs[cnt], Ys[cnt] = disp, error
+                models[cnt] = d_models[threshold][cnt]
                 d_cnt_to_disp_error[cnt] = (disp, error)
                 print("{},{},{}".format(cnt, disp, error), file=f_out_plot_all)
                 cnt += 1
@@ -1261,7 +1273,20 @@ class PredictionFairness:
 
             # compute pareto curve under this threshold
             keys = self.convex_env_train(Xs, Ys)
-            print('{},{}'.format(threshold, len(keys)), file=f_output_steps)
+            # if just one pair, skip ..
+            if len(keys) == 1:
+                continue
+
+            old_length = len(keys)
+            print(threshold, old_length)
+            if len(keys) <= self.n_pareto_curve_points:
+                self.generate_more_points(cnt, threshold, x, a, y, a_type, keys, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints)
+                print(old_length, len(keys))
+            else:
+                # remove points when there are too many points on the curve
+                self.remove_points_from_pareto_curve(keys)
+
+            row_idcs = None
             for cnt_key in keys:
                 cnt_key = int(cnt_key)
                 try:
@@ -1271,54 +1296,93 @@ class PredictionFairness:
                 except KeyError:
                     print('error .. {}'.format(cnt_key))
                 print("{},{},{}".format(cnt_key, disp, error), file=f_out_plot_pareto)
-                print('{}'.format(d_thre_error_disp_to_prints[(threshold, error, disp)]), file=f_output)
+                print('{},{}'.format(row_idx, d_thre_error_disp_to_prints[(threshold, error, disp)]), file=f_output)
 
+                row_idcs = '{}'.format(row_idx) if row_idcs is None else '{},{}'.format(row_idcs, row_idx)
+                row_idx += 1
+            print('{},{},{}'.format(threshold, len(keys), row_idcs), file=f_output_steps)
             f_out_plot_pareto.close()
             self.plot_charts(filename_pareto)
+
+        f_output_steps.close()
+        f_output.close()
         plt.show()
 
-                # todo: print out the values, and also count the values threshold, cnt_pairs len(tuples)
-                # print('{},{},{}'.format(error, len(d_errors[error]), d_errors[error]).replace('[', '').replace(']', '').replace(' ', '').replace('\'', ''), file=f_output)
+    # input: keys and models
+    # output: increasing cnt and adding generated points back into the disp_error and disp_error_print dict
+    def generate_more_points(self, cnt, threshold, x, a, y, a_type, keys, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints):
+        # (1) randomly select a key from keys[i] to get the pairs of models
+        # (2) compute values out of it and put it back the dictionaries
 
+        while len(keys) < self.n_pareto_curve_points:
+            idx = randint(0, len(keys)-2)
+            idx_clf1 = idx
+            idx_clf2 = idx + 1
 
-        #     # only select data points for this threshold
-        #     d_sub_pairs_vals = {}
-        #     for tup in tuples:
-        #         vals = d_pairs_vals[tup]
-        #         d_sub_pairs_vals[tup] = vals
-        #     d_keys_vals[threshold] = d_sub_pairs_vals
-        #
-        # # # rescan to print in order of threshold and lamb0
-        # # for threshold in thresholds:
-        # #     for lamb0 in range_lamb0:
-        # #         for lamb1 in range_lamb1:
-        # #             d_sub_pairs_vals = d_keys_vals[threshold]
-        # #             tup = str(lamb0) + str(lamb1)
-        # #             if tup in d_sub_pairs_vals:
-        # #                 print(d_sub_pairs_vals[tup], file=f_output)
-        #
-        # d_errors = {}
-        # l_errors = []
-        # for threshold in thresholds:
-        #     for lamb0 in range_lamb0:
-        #         for lamb1 in range_lamb1:
-        #             tup = str(lamb0) + str(lamb1)
-        #             d_sub_pairs_vals = d_keys_vals[threshold]
-        #             if tup in d_sub_pairs_vals:
-        #                 vals = d_sub_pairs_vals[tup]
-        #                 data = vals.split(',')
-        #                 error = float(data[4])
-        #                 l_errors.append(error)
-        #                 if error not in d_errors:
-        #                     d_errors[error] = ['{:.3f}'.format(threshold)]
-        #                 else:
-        #                     if threshold not in d_errors[error]:
-        #                         d_errors[error].append('{:.3f}'.format(threshold))
-        # l_errors.sort()
-        # for error in l_errors:
-        #     print('{},{},{}'.format(error, len(d_errors[error]), d_errors[error]).replace('[', '').replace(']', '').replace(' ', '').replace('\'', ''), file=f_output)
+            # find the closest existing model
+            while keys[idx_clf1] not in models:
+                idx_clf1 -= 1
+            while keys[idx_clf2] not in models:
+                idx_clf2 += 1
 
-        f_output.close()
+            clf1 = models[keys[idx_clf1]]
+            clf2 = models[keys[idx_clf2]]
+
+            disp, error, vals = self.make_average_predictions(clf1, clf2, threshold, x, a, y, a_type)
+            d_cnt_to_disp_error[cnt] = (disp, error)
+            d_thre_error_disp_to_prints[(threshold, error, disp)] = vals
+
+            # TODO: ordering can be problematic when inserting multiple points here ...
+            keys.insert(idx+1, cnt)
+            cnt += 1
+
+    @staticmethod
+    def make_average_predictions(clf1, clf2, threshold, x, a, y, a_type):
+        # randomly weight the two classifiers
+        w1 = randint(1, 9) / 10
+        w2 = 1 - w1
+
+        py1 = clf1.predict_proba(x)[:, 1]
+        py2 = clf2.predict_proba(x)[:, 1]
+
+        pred_prob_y = py1*w1 + py2*w2
+
+        y_pred = np.where(pred_prob_y >= threshold, 1, 0)
+
+        tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
+
+        error = sum(np.abs(y - y_pred)) / len(y)
+        # disparity for the two groups
+        fpr, fnr = fp / (fp + tn), fn / (fn + tp)
+        precision = 0 if tp + fp == 0 else tp / (tp + fp)
+        recall = 0 if tp + fn == 0 else tp / (tp + fn)
+        accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+        y0, y1 = y[a == 0], y[a == 1]
+        y0_pred, y1_pred = y_pred[a == 0], y_pred[a == 1]
+
+        tn0, fp0, fn0, tp0 = confusion_matrix(y0, y0_pred, [0, 1]).ravel()
+        tn1, fp1, fn1, tp1 = confusion_matrix(y1, y1_pred, [0, 1]).ravel()
+        fpr0, fpr1 = fp0 / (fp0 + tn0), fp1 / (fp1 + tn1)
+        fnr0, fnr1 = fn0 / (fn0 + tp0), fn1 / (fn1 + tp1)
+
+        # disparity for only fp
+        disparity = max(abs(fp0 - fp1), abs(fn0 - fn1))
+        # threshold,error,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+        vals = "{:.3f},{:.5f},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
+            threshold, error, disparity,
+            precision, recall,
+            fpr, fnr, accuracy,
+            tp0, tp1, fp0, fp1,
+            fn0, fn1, tn0, tn1, a_type)
+
+        return disparity, error, vals
+
+    def remove_points_from_pareto_curve(self, keys):
+        while len(keys) > self.n_pareto_curve_points:
+            idx = randint(0, len(keys)-1)
+            del keys[idx]
+
 
     def lambs(self):
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data()
