@@ -40,8 +40,8 @@ class PredictionFairness:
         #                  0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.2, 0.3, 0.4, 0.5]
         # self.list_eps = [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
         self.list_eps = np.linspace(-1, 1, 81, endpoint=True)
-        self.list_eps_lamb0 = np.linspace(-1, 1, 41, endpoint=True) # 41
-        self.list_eps_lamb1 = np.linspace(-1, 1, 41, endpoint=True)
+        self.list_eps_lamb0 = np.linspace(-1, 1, 21, endpoint=True) # 41
+        self.list_eps_lamb1 = np.linspace(-1, 1, 21, endpoint=True)
         # self.list_eps = np.linspace(-3, 3, 61, endpoint=True)
 
         # self.list_eps = [range(0.01, 0.2, 0.01)]
@@ -641,6 +641,8 @@ class PredictionFairness:
 
     def generate_plot_data_lg(self):
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type='race') # type doesn't matter..
+
+        data = train
         thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
 
         fout = open('dataset/non_normalized_t0.csv', 'w')
@@ -685,6 +687,7 @@ class PredictionFairness:
 
             disp_fn, disp_fp = 0, 0
             lamb0, lamb1 = 0, 0
+            a_type = 0
             att_type = 0
             # att_type = 1  # race
             # att_type = 2  # gender
@@ -712,13 +715,24 @@ class PredictionFairness:
             #         tp_a0, tp_a1, fp_a0, fp_a1,
             #         fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
             # lamb0,lamb1,threshold,disp,error,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
-            print(
-                "{},{},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
-                    lamb0, lamb1, threshold, disp_fp, (1 - accuracy),
-                    precision, recall,
-                    fpr, fnr, accuracy,
-                    tp_a0, tp_a1, fp_a0, fp_a1,
-                    fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
+
+            # threshold,error,disp_fp,precision,recall,fpr,fnr,accuracy,tpa0,tpa1,fpa0,fpa1,fna0,fna1,tna0,fna1,type
+            vals = "{:.3f},{:.5f},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},{}".format(
+                threshold, (1 - accuracy), disp_fp,
+                precision, recall,
+                fpr, fnr, accuracy,
+                tp_a0, tp_a1, fp_a0, fp_a1,
+                fn_a0, fn_a1, tn_a0, tn_a1, a_type)
+
+            print('{}'.format(vals), file=fout)
+
+            # print(
+            #     "{},{},{:.3f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f},{},{},{},{},{},{},{},{},0".format(
+            #         lamb0, lamb1, threshold, disp_fp, (1 - accuracy),
+            #         precision, recall,
+            #         fpr, fnr, accuracy,
+            #         tp_a0, tp_a1, fp_a0, fp_a1,
+            #         fn_a0, fn_a1, tn_a0, tn_a1), file=fout)
 
     def generate_plot_data(self):
 
@@ -1180,7 +1194,7 @@ class PredictionFairness:
 
     def lambs_abs_pareto_curves(self):
 
-        a_type = 'sex'
+        a_type = 'race'
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
         data = train
         # a_type: 1 race, 2, gender
@@ -1213,6 +1227,7 @@ class PredictionFairness:
                     tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
 
                     error = sum(np.abs(y - y_pred)) / len(y)
+                    error = sum(np.abs(y - y_pred))
                     # disparity for the two groups
                     fpr, fnr = fp / (fp + tn), fn / (fn + tp)
                     precision = 0 if tp + fp == 0 else tp / (tp + fp)
@@ -1257,7 +1272,7 @@ class PredictionFairness:
             f_out_plot_all = open(filename_all, 'w')
             f_out_plot_pareto = open(filename_pareto, 'w')
 
-            # just use a cnt as key to connect Xs and Ys, and the corresponding model
+            # just use a cnt as key to connect Xs (sorted) and Ys, and the corresponding model
             cnt = 0
             d_cnt_to_disp_error = {}
             Xs, Ys = {}, {}
@@ -1272,25 +1287,25 @@ class PredictionFairness:
             # self.plot_charts(filename_all)
 
             # compute pareto curve under this threshold
-            keys = self.convex_env_train(Xs, Ys)
+            cnts = self.convex_env_train(Xs, Ys)
             # if just one pair, skip ..
-            if len(keys) == 1:
+            if len(cnts) == 1:
                 continue
 
-            old_length = len(keys)
+            old_length = len(cnts)
             print(threshold, old_length)
-            if len(keys) <= self.n_pareto_curve_points:
-                self.generate_more_points(cnt, threshold, x, a, y, a_type, keys, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints)
-                print(old_length, len(keys))
+            if len(cnts) <= self.n_pareto_curve_points:
+                self.generate_more_points(cnt, threshold, x, a, y, a_type, cnts, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints)
+                print(old_length, len(cnts))
             else:
                 # remove points when there are too many points on the curve
-                self.remove_points_from_pareto_curve(keys)
+                self.remove_points_from_pareto_curve(cnts)
 
             row_idcs = None
-            for cnt_key in keys:
+            for cnt_key in cnts:
                 cnt_key = int(cnt_key)
                 try:
-                    (disp, error) = d_cnt_to_disp_error[cnt_key]
+                    disp, error = d_cnt_to_disp_error[cnt_key]
                     # TODO: compute distance between errors??
                     # print('{},{},{},{}'.format(threshold, cnt_key, error, disp))
                 except KeyError:
@@ -1300,7 +1315,7 @@ class PredictionFairness:
 
                 row_idcs = '{}'.format(row_idx) if row_idcs is None else '{},{}'.format(row_idcs, row_idx)
                 row_idx += 1
-            print('{},{},{}'.format(threshold, len(keys), row_idcs), file=f_output_steps)
+            print('{},{},{}'.format(threshold, len(cnts), row_idcs), file=f_output_steps)
             f_out_plot_pareto.close()
             self.plot_charts(filename_pareto)
 
@@ -1310,31 +1325,57 @@ class PredictionFairness:
 
     # input: keys and models
     # output: increasing cnt and adding generated points back into the disp_error and disp_error_print dict
-    def generate_more_points(self, cnt, threshold, x, a, y, a_type, keys, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints):
+    def generate_more_points(self, cnt, threshold, x, a, y, a_type, cnts, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints):
         # (1) randomly select a key from keys[i] to get the pairs of models
         # (2) compute values out of it and put it back the dictionaries
 
-        while len(keys) < self.n_pareto_curve_points:
-            idx = randint(0, len(keys)-2)
+        # get all the errors, error
+        l_errors = []
+        for cnt in cnts:
+            _, error = d_cnt_to_disp_error[cnt]
+            l_errors.append(error)
+
+        pre_error = 0
+        cnt_repeat = 0
+        max_repeat = 5
+        while len(cnts) <= self.n_pareto_curve_points:
+            idx = randint(0, len(cnts) - 2)
             idx_clf1 = idx
             idx_clf2 = idx + 1
 
             # find the closest existing model
-            while keys[idx_clf1] not in models:
+            while cnts[idx_clf1] not in models:
                 idx_clf1 -= 1
-            while keys[idx_clf2] not in models:
+            while cnts[idx_clf2] not in models:
                 idx_clf2 += 1
 
-            clf1 = models[keys[idx_clf1]]
-            clf2 = models[keys[idx_clf2]]
+            clf1 = models[cnts[idx_clf1]]
+            clf2 = models[cnts[idx_clf2]]
 
+            # working below here
             disp, error, vals = self.make_average_predictions(clf1, clf2, threshold, x, a, y, a_type)
-            d_cnt_to_disp_error[cnt] = (disp, error)
-            d_thre_error_disp_to_prints[(threshold, error, disp)] = vals
 
-            # TODO: ordering can be problematic when inserting multiple points here ...
-            keys.insert(idx+1, cnt)
-            cnt += 1
+            if error == pre_error:
+                cnt_repeat += 1
+                if cnt_repeat > max_repeat:
+                    return
+            pre_error = error
+
+            if error in l_errors:
+                continue
+            cnt_repeat = 0
+
+            idx = 0
+            while idx < len(l_errors):
+                if l_errors[idx] < error:
+                    l_errors.insert(idx, error)
+                    cnts.insert(idx, cnt)
+                    d_cnt_to_disp_error[cnt] = (disp, error)
+                    d_thre_error_disp_to_prints[(threshold, error, disp)] = vals
+
+                    cnt += 1
+                    break
+                idx += 1
 
     @staticmethod
     def make_average_predictions(clf1, clf2, threshold, x, a, y, a_type):
@@ -1352,6 +1393,7 @@ class PredictionFairness:
         tn, fp, fn, tp = confusion_matrix(y, y_pred, [0, 1]).ravel()
 
         error = sum(np.abs(y - y_pred)) / len(y)
+        error = sum(np.abs(y - y_pred))
         # disparity for the two groups
         fpr, fnr = fp / (fp + tn), fn / (fn + tp)
         precision = 0 if tp + fp == 0 else tp / (tp + fp)
