@@ -1191,7 +1191,6 @@ class PredictionFairness:
 
         f_output.close()
 
-
     def lambs_abs_pareto_curves(self):
 
         a_type = 'race'
@@ -1200,7 +1199,7 @@ class PredictionFairness:
         # a_type: 1 race, 2, gender
         a_type = 1 if a_type == 'race' else 2
 
-        filename = 'dataset/non_normalized_pareto_curves_t{}.csv'.format(a_type)
+        filename = 'dataset/non_normalized_pareto_curves_v1_t{}.csv'.format(a_type)
         f_output = open(filename, 'w')
         x, a, y = data[idx_X], data[idx_A[0]], data[idx_y[0]]
         print(data.shape)
@@ -1263,7 +1262,7 @@ class PredictionFairness:
                             fn0, fn1, tn0, tn1, a_type)
                     d_thre_error_disp_to_prints[(threshold, error, disparity)] = vals
 
-        filename_steps = "dataset/pareto_steps_t{}.csv".format(a_type)
+        filename_steps = "dataset/pareto_steps_v1_t{}.csv".format(a_type)
         f_output_steps = open(filename_steps, 'w')
         row_idx = 0
         for threshold in thresholds:
@@ -1294,7 +1293,7 @@ class PredictionFairness:
 
             old_length = len(cnts)
             print(threshold, old_length)
-            if len(cnts) <= self.n_pareto_curve_points:
+            if len(cnts) < self.n_pareto_curve_points:
                 self.generate_more_points(cnt, threshold, x, a, y, a_type, cnts, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints)
                 print(old_length, len(cnts))
             else:
@@ -1306,8 +1305,6 @@ class PredictionFairness:
                 cnt_key = int(cnt_key)
                 try:
                     disp, error = d_cnt_to_disp_error[cnt_key]
-                    # TODO: compute distance between errors??
-                    # print('{},{},{},{}'.format(threshold, cnt_key, error, disp))
                 except KeyError:
                     print('error .. {}'.format(cnt_key))
                 print("{},{},{}".format(cnt_key, disp, error), file=f_out_plot_pareto)
@@ -1325,20 +1322,21 @@ class PredictionFairness:
 
     # input: keys and models
     # output: increasing cnt and adding generated points back into the disp_error and disp_error_print dict
+    # adding valid points on pareto curves
     def generate_more_points(self, cnt, threshold, x, a, y, a_type, cnts, models, d_cnt_to_disp_error, d_thre_error_disp_to_prints):
         # (1) randomly select a key from keys[i] to get the pairs of models
         # (2) compute values out of it and put it back the dictionaries
 
         # get all the errors, error
-        l_errors = []
-        for cnt in cnts:
-            _, error = d_cnt_to_disp_error[cnt]
+        l_errors, l_disps = [], []
+        for i in cnts:
+            disp, error = d_cnt_to_disp_error[i]
             l_errors.append(error)
+            l_disps.append(disp)
 
-        pre_error = 0
-        cnt_repeat = 0
-        max_repeat = 5
-        while len(cnts) <= self.n_pareto_curve_points:
+        cnt_repeat, max_repeat = 0, 10
+        points_added = False
+        while len(cnts) < self.n_pareto_curve_points:
             idx = randint(0, len(cnts) - 2)
             idx_clf1 = idx
             idx_clf2 = idx + 1
@@ -1355,25 +1353,30 @@ class PredictionFairness:
             # working below here
             disp, error, vals = self.make_average_predictions(clf1, clf2, threshold, x, a, y, a_type)
 
-            if error == pre_error:
+            if not points_added:
                 cnt_repeat += 1
                 if cnt_repeat > max_repeat:
                     return
-            pre_error = error
+            else:
+                cnt_repeat = 0
+                points_added = False
 
-            if error in l_errors:
+            if error in l_errors or disp in l_disps:
                 continue
-            cnt_repeat = 0
 
             idx = 0
             while idx < len(l_errors):
-                if l_errors[idx] < error:
+                # only adding possible value pairs
+                if l_errors[idx] < error and l_disps[idx] > disp and (idx != 0 and l_errors[idx-1] > error and l_disps[idx-1] < disp):
                     l_errors.insert(idx, error)
+                    l_disps.insert(idx, disp)
                     cnts.insert(idx, cnt)
+
                     d_cnt_to_disp_error[cnt] = (disp, error)
                     d_thre_error_disp_to_prints[(threshold, error, disp)] = vals
 
                     cnt += 1
+                    points_added = True
                     break
                 idx += 1
 
