@@ -100,6 +100,7 @@ for assignment in all_assignments:
     # Getting the code submitted by the MTurk worker using regular expression
     submitted_code = re.search('<FreeText>(.*)</FreeText>', assignment['Answer'])
     submitted_code = submitted_code.group(1)
+    print(submitted_code)
 
     # Assigning Qualification to worker
     qualification_response = mturk.associate_qualification_with_worker(
@@ -111,54 +112,95 @@ for assignment in all_assignments:
         SendNotification=False #Not notifying Turker
         )
     # print (qualification_response)
+    # e.g., code example: U78QD18CB15W
 
-    if 'fpPM' in submitted_code:
-        # 'fpPM'
-        # Workers that completed the survey and submitted a resume.
-        # Approve the HIT, and provide bonus
-
-        # print ('Worker : ' + assignment['WorkerId'] + ' submitted resume')
-
-        workersWithResume.append(assignment['WorkerId'])
-        approval_response = mturk.approve_assignment(
-            AssignmentId=assignment['AssignmentId'],
-            RequesterFeedback='Thank you!',
-            OverrideRejection=False
-        )
-
-        mturk.send_bonus(
-            WorkerId=assignment['WorkerId'],
-            BonusAmount='2.0', #The Bonus amount is a US Dollar amount specified using a string (for example, "5" represents $5.00 USD and "101.42" represents $101.42 USD). Do not include currency symbols or currency codes.
-            AssignmentId=assignment['AssignmentId'],
-            Reason='Thank you for uploading your resume in the survey',
-            UniqueRequestToken='ResumeReceived' + assignment['WorkerId']
-        )
-
-        print(">>>>>>>>Approved and Sent Bonus to: " + submitted_code)
-        #print (approval_response)
-
-
-    elif 'k2NX' in submitted_code:
-        # Workers that completed the survey and DID NOT submit a resume.
-        # Approve the HIT, NO bonus
-
-        # print ('Worker : ' + assignment['WorkerId'] + ' has NO resume')
-        workersNoResume.append(assignment['WorkerId'])
-        mturk.approve_assignment(
-            AssignmentId=assignment['AssignmentId'],
-            RequesterFeedback='Thank you!',
-            OverrideRejection=False
-        )
-        print(">>>>>>>>Approved and No Bonus to "+ submitted_code)
-
-    else:
+    if submitted_code is None or len(submitted_code) == 0:
         # Workers that did not complete the survey. Reject.
         workersToReject.append(assignment['WorkerId'])
         mturk.reject_assignment(
             AssignmentId=assignment['AssignmentId'],
             RequesterFeedback='Sorry you did not complete the survey correctly'
         )
-        print(">>>>>>>>Rejected to "+submitted_code)
+        print(">>>>>>>>Rejected to " + submitted_code)
+    else:
+        attention_check = True if submitted_code[-3] == '1' else False
+        if attention_check:
+            # pass attention check, compute bonus
+            score = 30 - int(submitted_code[5:7]) + 6
+            workersWithResume.append(assignment['WorkerId'])
+            approval_response = mturk.approve_assignment(
+                AssignmentId=assignment['AssignmentId'],
+                RequesterFeedback='Thank you!',
+                OverrideRejection=False
+            )
+
+            mturk.send_bonus(
+                WorkerId=assignment['WorkerId'],
+                BonusAmount=str(score),
+                # The Bonus amount is a US Dollar amount specified using a string (for example, "5" represents $5.00 USD and "101.42" represents $101.42 USD). Do not include currency symbols or currency codes.
+                AssignmentId=assignment['AssignmentId'],
+                Reason='Thank you finishing bonus questions!',
+                UniqueRequestToken='ResumeReceived' + assignment['WorkerId']
+            )
+
+            print(">>>>>>>>Approved and Sent Bonus to: " + submitted_code)
+        else:
+            # failed attention check, no money
+            workersNoResume.append(assignment['WorkerId'])
+            mturk.approve_assignment(
+                AssignmentId=assignment['AssignmentId'],
+                RequesterFeedback='Thank you!',
+                OverrideRejection=False
+            )
+            print(">>>>>>>>Approved and No Bonus to " + submitted_code)
+
+    # if 'fpPM' in submitted_code:
+    #     # 'fpPM'
+    #     # Workers that completed the survey and submitted a resume.
+    #     # Approve the HIT, and provide bonus
+    #
+    #     # print ('Worker : ' + assignment['WorkerId'] + ' submitted resume')
+    #
+    #     workersWithResume.append(assignment['WorkerId'])
+    #     approval_response = mturk.approve_assignment(
+    #         AssignmentId=assignment['AssignmentId'],
+    #         RequesterFeedback='Thank you!',
+    #         OverrideRejection=False
+    #     )
+    #
+    #     mturk.send_bonus(
+    #         WorkerId=assignment['WorkerId'],
+    #         BonusAmount='2.0', #The Bonus amount is a US Dollar amount specified using a string (for example, "5" represents $5.00 USD and "101.42" represents $101.42 USD). Do not include currency symbols or currency codes.
+    #         AssignmentId=assignment['AssignmentId'],
+    #         Reason='Thank you for uploading your resume in the survey',
+    #         UniqueRequestToken='ResumeReceived' + assignment['WorkerId']
+    #     )
+    #
+    #     print(">>>>>>>>Approved and Sent Bonus to: " + submitted_code)
+    #     #print (approval_response)
+    #
+    #
+    # elif 'k2NX' in submitted_code:
+    #     # Workers that completed the survey and DID NOT submit a resume.
+    #     # Approve the HIT, NO bonus
+    #
+    #     # print ('Worker : ' + assignment['WorkerId'] + ' has NO resume')
+    #     workersNoResume.append(assignment['WorkerId'])
+    #     mturk.approve_assignment(
+    #         AssignmentId=assignment['AssignmentId'],
+    #         RequesterFeedback='Thank you!',
+    #         OverrideRejection=False
+    #     )
+    #     print(">>>>>>>>Approved and No Bonus to "+ submitted_code)
+    #
+    # else:
+    #     # Workers that did not complete the survey. Reject.
+    #     workersToReject.append(assignment['WorkerId'])
+    #     mturk.reject_assignment(
+    #         AssignmentId=assignment['AssignmentId'],
+    #         RequesterFeedback='Sorry you did not complete the survey correctly'
+    #     )
+    #     print(">>>>>>>>Rejected to "+submitted_code)
 
 ### Check status
 for assignment in all_assignments:
