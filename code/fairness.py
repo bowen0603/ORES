@@ -40,8 +40,8 @@ class PredictionFairness:
         #                  0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.2, 0.3, 0.4, 0.5]
         # self.list_eps = [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
         self.list_eps = np.linspace(-1, 1, 81, endpoint=True)
-        self.list_eps_lamb0 = np.linspace(-1, 1, 21, endpoint=True) # 41
-        self.list_eps_lamb1 = np.linspace(-1, 1, 21, endpoint=True)
+        self.list_eps_lamb0 = np.linspace(-5, 5, 41, endpoint=True) # 41
+        self.list_eps_lamb1 = np.linspace(-5, 5, 41, endpoint=True)
         # self.list_eps = np.linspace(-3, 3, 61, endpoint=True)
 
         # self.list_eps = [range(0.01, 0.2, 0.01)]
@@ -644,6 +644,7 @@ class PredictionFairness:
 
         data = train
         thresholds = np.linspace(0, 1, self.threshold_density, endpoint=True)
+        print(data.shape)
 
         fout = open('dataset/non_normalized_t0.csv', 'w')
         tp = fp = fn = tn = 0
@@ -1193,7 +1194,7 @@ class PredictionFairness:
 
     def lambs_abs_pareto_curves(self):
 
-        a_type = 'race'
+        a_type = 'sex'
         train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
         data = train
         # a_type: 1 race, 2, gender
@@ -1637,6 +1638,36 @@ class PredictionFairness:
             f_output.close()
             self.plot_charts(filename)
 
+    def text_autoML(self):
+        # X_train, X_test, y_train = [], [], []
+        a_type = 'race'
+        train, test, data, idx_X, idx_A, idx_y, data_name = Compas().create_data(a_type)
+
+        random_state = np.random.RandomState(11)
+        train, test = train_test_split(data, test_size=0.3, random_state=random_state)
+        train, test = train.reset_index(), test.reset_index()
+        train_X, train_y, test_X, test_y = train[idx_X+idx_A], train[idx_y], test[idx_X+idx_A], test[idx_y]
+        print(data.shape, train_X.shape, train_y.shape, test_X.shape, test_y.shape)
+
+        import autosklearn.classification
+        cls = autosklearn.classification.AutoSklearnClassifier()
+        # cls = LogisticRegression()
+        cls.fit(train_X, train_y)
+        pred_y = cls.predict(test_X)
+        # pred_y = pred_y.reshape(len(pred_y), 1)
+
+        tn, fp, fn, tp = confusion_matrix(test_y, pred_y, [0, 1]).ravel()
+        accuracy = (tp + tn) / (tn + fp + fn + tp)
+        print(accuracy)
+
+        # print(pred_y.shape, test_y.shape)
+
+        # print(len(test_y))
+        # print(sum(np.abs(test_y - pred_y)))
+
+
+        # test_error = sum(np.abs(test_y - pred_y)) / len(test_y)
+        # print(test_error)
 
 def main():
     runner = PredictionFairness(sys.argv[1])
@@ -1659,6 +1690,8 @@ def main():
     # runner.analysis_on_compas_data()
     # runner.generate_plot_data()
     # runner.generate_plot_data_lg()
+
+    # runner.text_autoML()
 
 if __name__ == '__main__':
     main()

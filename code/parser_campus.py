@@ -75,6 +75,45 @@ class Compas:
         test_data = test_data.reset_index()
         return train_data, test_data, data
 
+    # create a balanced data set by race
+    def adjust_data(self, data, a_type):
+        if a_type == 'race':
+            # select data that is only white or only black
+            d_white = data[data['race'] == 1]
+            d_black = data[data['race'] == 0]
+
+            # check the number of data points in each set
+            print(d_white.shape, d_black.shape)
+            # (1634, 19)(2325, 19)
+
+            # select a number and randomly select that number of data points from each set
+            # import random
+            # random.shuffle(d_white)
+            # random.shuffle(d_black)
+
+            n = 1500
+            d_white, d_black = d_white[:n], d_black[:n]
+            data = d_black.append(d_white)
+            print(d_white.shape, d_black.shape, data.shape)
+        else:
+            d_male = data[data['sex'] == 1]
+            d_female = data[data['sex'] == 0]
+
+            # check the number of data points in each set
+            print(d_male.shape, d_female.shape)
+            # (1634, 19)(2325, 19)
+
+            # select a number and randomly select that number of data points from each set
+            # import random
+            # random.shuffle(d_white)
+            # random.shuffle(d_black)
+
+            n = 800
+            d_male, d_female = d_male[:n], d_female[:n]
+            data = d_male.append(d_female)
+            print(d_male.shape, d_female.shape, data.shape)
+        return data
+
     def create_data(self, a_type):
         train, test, data = self.create_train_test()
 
@@ -111,4 +150,5 @@ class Compas:
             features.insert(0, 'sex')
         label = ['label']
 
+        train = self.adjust_data(train, a_type)
         return train, test, data, features, protected_attribute, label, "compas"
