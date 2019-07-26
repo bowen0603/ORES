@@ -140,7 +140,7 @@ for assignment in all_assignments:
                 # The Bonus amount is a US Dollar amount specified using a string (for example, "5" represents $5.00 USD and "101.42" represents $101.42 USD). Do not include currency symbols or currency codes.
                 AssignmentId=assignment['AssignmentId'],
                 Reason='Thank you finishing bonus questions!',
-                UniqueRequestToken='ResumeReceived' + assignment['WorkerId']
+                UniqueRequestToken='TaskFinished' + assignment['WorkerId']
             )
 
             print(">>>>>>>>Approved and Sent Bonus to: " + submitted_code)
@@ -153,54 +153,6 @@ for assignment in all_assignments:
                 OverrideRejection=False
             )
             print(">>>>>>>>Approved and No Bonus to " + submitted_code)
-
-    # if 'fpPM' in submitted_code:
-    #     # 'fpPM'
-    #     # Workers that completed the survey and submitted a resume.
-    #     # Approve the HIT, and provide bonus
-    #
-    #     # print ('Worker : ' + assignment['WorkerId'] + ' submitted resume')
-    #
-    #     workersWithResume.append(assignment['WorkerId'])
-    #     approval_response = mturk.approve_assignment(
-    #         AssignmentId=assignment['AssignmentId'],
-    #         RequesterFeedback='Thank you!',
-    #         OverrideRejection=False
-    #     )
-    #
-    #     mturk.send_bonus(
-    #         WorkerId=assignment['WorkerId'],
-    #         BonusAmount='2.0', #The Bonus amount is a US Dollar amount specified using a string (for example, "5" represents $5.00 USD and "101.42" represents $101.42 USD). Do not include currency symbols or currency codes.
-    #         AssignmentId=assignment['AssignmentId'],
-    #         Reason='Thank you for uploading your resume in the survey',
-    #         UniqueRequestToken='ResumeReceived' + assignment['WorkerId']
-    #     )
-    #
-    #     print(">>>>>>>>Approved and Sent Bonus to: " + submitted_code)
-    #     #print (approval_response)
-    #
-    #
-    # elif 'k2NX' in submitted_code:
-    #     # Workers that completed the survey and DID NOT submit a resume.
-    #     # Approve the HIT, NO bonus
-    #
-    #     # print ('Worker : ' + assignment['WorkerId'] + ' has NO resume')
-    #     workersNoResume.append(assignment['WorkerId'])
-    #     mturk.approve_assignment(
-    #         AssignmentId=assignment['AssignmentId'],
-    #         RequesterFeedback='Thank you!',
-    #         OverrideRejection=False
-    #     )
-    #     print(">>>>>>>>Approved and No Bonus to "+ submitted_code)
-    #
-    # else:
-    #     # Workers that did not complete the survey. Reject.
-    #     workersToReject.append(assignment['WorkerId'])
-    #     mturk.reject_assignment(
-    #         AssignmentId=assignment['AssignmentId'],
-    #         RequesterFeedback='Sorry you did not complete the survey correctly'
-    #     )
-    #     print(">>>>>>>>Rejected to "+submitted_code)
 
 ### Check status
 for assignment in all_assignments:
