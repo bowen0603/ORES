@@ -88,6 +88,7 @@ print(">>>> "+ str(len(all_assignments))+" assignments retrieved")
 
 # sys.exit(0)
 
+total_payment = 0
 # Iterating through all assignment completed by the MTurk worker
 for assignment in all_assignments:
     # Ignoring assignments that have either been approved or rejected if needed
@@ -100,6 +101,8 @@ for assignment in all_assignments:
     # Getting the code submitted by the MTurk worker using regular expression
     submitted_code = re.search('<FreeText>(.*)</FreeText>', assignment['Answer'])
     submitted_code = submitted_code.group(1)
+    if submitted_code is not None:
+        submitted_code = submitted_code.strip()
     print(submitted_code)
 
     # Assigning Qualification to worker
@@ -114,7 +117,7 @@ for assignment in all_assignments:
     # print (qualification_response)
     # e.g., code example: U78QD18CB15W
 
-    if submitted_code is None or len(submitted_code) == 0:
+    if submitted_code is None or not submitted_code.startswith('U78Q'):
         # Workers that did not complete the survey. Reject.
         workersToReject.append(assignment['WorkerId'])
         mturk.reject_assignment(
@@ -123,8 +126,8 @@ for assignment in all_assignments:
         )
         print(">>>>>>>>Rejected to " + submitted_code)
     else:
-        attention_check = True if submitted_code[-3] == '1' else False
-        if attention_check:
+        pass_attention_check = True if submitted_code[-3] == '1' else False
+        if pass_attention_check:
             # pass attention check, compute bonus
             score = 30 - int(submitted_code[5:7]) + 6
             workersWithResume.append(assignment['WorkerId'])
@@ -134,16 +137,17 @@ for assignment in all_assignments:
                 OverrideRejection=False
             )
 
-            mturk.send_bonus(
-                WorkerId=assignment['WorkerId'],
-                BonusAmount=str(score),
-                # The Bonus amount is a US Dollar amount specified using a string (for example, "5" represents $5.00 USD and "101.42" represents $101.42 USD). Do not include currency symbols or currency codes.
-                AssignmentId=assignment['AssignmentId'],
-                Reason='Thank you finishing bonus questions!',
-                UniqueRequestToken='TaskFinished' + assignment['WorkerId']
-            )
-
+            if score != 0:
+                mturk.send_bonus(
+                    WorkerId=assignment['WorkerId'],
+                    BonusAmount=str(round(score * 0.2, 2)),
+                    # The Bonus amount is a US Dollar amount specified using a string (for example, "5" represents $5.00 USD and "101.42" represents $101.42 USD). Do not include currency symbols or currency codes.
+                    AssignmentId=assignment['AssignmentId'],
+                    Reason='Thank you finishing bonus questions!',
+                    UniqueRequestToken='TaskFinished' + assignment['WorkerId']
+                )
             print(">>>>>>>>Approved and Sent Bonus to: " + submitted_code)
+            total_payment += 2 + score*0.2
         else:
             # failed attention check, no money
             workersNoResume.append(assignment['WorkerId'])
@@ -153,6 +157,8 @@ for assignment in all_assignments:
                 OverrideRejection=False
             )
             print(">>>>>>>>Approved and No Bonus to " + submitted_code)
+
+print("****Total payment: {}".format(total_payment))
 
 ### Check status
 for assignment in all_assignments:

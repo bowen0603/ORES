@@ -36,6 +36,8 @@ class Analysis:
         self.data['Q62'] = self.data['Q62'].astype('int32')
         self.data['Q64'] = self.data['Q64'].astype('int32')
         self.data['Q65'] = self.data['Q65'].astype('int32')
+        self.data['Q70'] = self.data['Q70'].astype('int32')
+        self.data['Q72'] = self.data['Q72'].astype('int32')
         self.data['SC0'] = self.data['SC0'].astype('int32')
 
         self.data = self.data.rename(columns={"Q50": "Confident in responses", "Q51": "Help understand trade-offs",
@@ -43,6 +45,8 @@ class Analysis:
                                               "Q62": "Education level", "Q63": "Race", "SC0": "Score",
                                               "Q64": "Familiarity with judicial system",
                                               "Q65": "Familiarity with AI-powered systems",
+                                              "Q70": "Reflect value about disparity-error",
+                                              "Q72": "Reflect value about aggressiveness",
                                               "Duration (in seconds)": "Duration (in minutes)"})
         self.data['Trust change'] = self.data['Q55'] - self.data['Q35']
 
@@ -67,6 +71,17 @@ class Analysis:
         # age, education, familiarity with judicial system, Your familiarity of the use of AI-powered systems, dummy
         X = df.loc[:, ['Age', 'Education level', 'Familiarity with judicial system',
                        'Familiarity with AI-powered systems', 'data', 'scenario']]
+
+        # TODO: t-test
+        df_data_view = df[df['data'] == 1]
+        df_scenario_view = df[df['scenario'] == 1]
+
+        print(df_data_view.shape, df_scenario_view.shape)
+        v1 = df_data_view.loc[:, 'Score'].tolist()
+        v2 = df_scenario_view.loc[:, 'Score'].tolist()
+
+        from scipy.stats import ttest_ind
+        t, p = ttest_ind(v1, v2, equal_var=False)  # list of data in a and b
 
         # DV1: score
         # DVs for different models: trust, time, confidence, evaluation results
@@ -104,9 +119,23 @@ class Analysis:
         est2 = est.fit()
         print(est2.summary())
 
-        # DV5: ease of use
+        # DV6: ease of use
         print('***DV: ease of use')
         y = df.loc[:, df.columns == 'Ease of use']
+        est = sm.OLS(y, sm.add_constant(X))
+        est2 = est.fit()
+        print(est2.summary())
+
+        # DV7: reflect value about aggressiveness
+        print('***DV: reflect value about aggressiveness')
+        y = df.loc[:, df.columns == 'Reflect value about disparity-error']
+        est = sm.OLS(y, sm.add_constant(X))
+        est2 = est.fit()
+        print(est2.summary())
+
+        # DV8: reflect value about disparity-error
+        print('***DV: reflect value about disparity-error')
+        y = df.loc[:, df.columns == 'Reflect value about aggressiveness']
         est = sm.OLS(y, sm.add_constant(X))
         est2 = est.fit()
         print(est2.summary())
