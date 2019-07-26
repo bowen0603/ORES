@@ -3,6 +3,7 @@ import numpy as np
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.stats import ttest_ind
 
 class Analysis:
     def __init__(self):
@@ -40,6 +41,7 @@ class Analysis:
         self.data['Q72'] = self.data['Q72'].astype('int32')
         self.data['SC0'] = self.data['SC0'].astype('int32')
 
+        print(self.data.loc[:, ['Q59', 'Q62', 'Q64', 'Q65']].corr())
         self.data = self.data.rename(columns={"Q50": "Confident in responses", "Q51": "Help understand trade-offs",
                                               "Q53": "Familiar with the tool quickly", "Q54": "Ease of use", "Q59": "Age",
                                               "Q62": "Education level", "Q63": "Race", "SC0": "Score",
@@ -60,88 +62,35 @@ class Analysis:
     def run(self):
         self.data_cleaning()
         df = self.data
-        self.correlation_analysis(df)
+        # self.correlation_analysis(df)
 
         feature = ['Age', 'Education level',
                    'Familiarity with judicial system', 'Familiarity with AI-powered systems', 'data', 'scenario']
         print(df[feature].corr(method='pearson'))
 
-        # IVs: age, education,
         # TODO: add in race and gender
-        # age, education, familiarity with judicial system, Your familiarity of the use of AI-powered systems, dummy
+        # IVs: age, education, familiarity with judicial system, Your familiarity of the use of AI-powered systems
         X = df.loc[:, ['Age', 'Education level', 'Familiarity with judicial system',
                        'Familiarity with AI-powered systems', 'data', 'scenario']]
 
-        # TODO: t-test
         df_data_view = df[df['data'] == 1]
         df_scenario_view = df[df['scenario'] == 1]
 
-        print(df_data_view.shape, df_scenario_view.shape)
-        v1 = df_data_view.loc[:, 'Score'].tolist()
-        v2 = df_scenario_view.loc[:, 'Score'].tolist()
+        list_DVs = ['Score', 'Confident in responses', 'Help understand trade-offs', 'Trust change',
+                    'Duration (in minutes)', 'Ease of use', 'Reflect value about aggressiveness',
+                    'Reflect value about disparity-error']
 
-        from scipy.stats import ttest_ind
-        t, p = ttest_ind(v1, v2, equal_var=False)  # list of data in a and b
-
-        # DV1: score
-        # DVs for different models: trust, time, confidence, evaluation results
-        print('***DV: objective evaluation score')
-        y = df.loc[:, df.columns == 'Score']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
-
-        # DV2: self eval (self confidence)
-        print('***DV: self confidence')
-        y = df.loc[:, df.columns == 'Confident in responses']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
-
-        # DV3: self eval on understanding trade-offs
-        print('***DV: understanding trade-offs')
-        y = df.loc[:, df.columns == 'Help understand trade-offs']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
-
-        # DV4: trust change
-        print('***DV: Trust change')
-        y = df.loc[:, df.columns == 'Trust change']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
-
-        # DV5: finishing time
-        print('***DV: finishing time in minutes')
-        y = df.loc[:, df.columns == 'Duration (in minutes)']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
-
-        # DV6: ease of use
-        print('***DV: ease of use')
-        y = df.loc[:, df.columns == 'Ease of use']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
-
-        # DV7: reflect value about aggressiveness
-        print('***DV: reflect value about aggressiveness')
-        y = df.loc[:, df.columns == 'Reflect value about disparity-error']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
-
-        # DV8: reflect value about disparity-error
-        print('***DV: reflect value about disparity-error')
-        y = df.loc[:, df.columns == 'Reflect value about aggressiveness']
-        est = sm.OLS(y, sm.add_constant(X))
-        est2 = est.fit()
-        print(est2.summary())
+        for DV in list_DVs:
+            print('***DV: {}'.format(DV))
+            y = df.loc[:, df.columns == DV]
+            est = sm.OLS(y, sm.add_constant(X))
+            est2 = est.fit()
+            print(est2.summary())
+            t, p = ttest_ind(df_data_view.loc[:, DV].tolist(),
+                             df_scenario_view.loc[:, DV].tolist(), equal_var=False)
+            print('t-test: t: {}, pval: {}'.format(t, p))
 
     def corr_mtx(self, df, dropDuplicates=True):
-
         # Compute the correlation matrix
         df = df.corr()
 
