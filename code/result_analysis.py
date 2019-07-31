@@ -41,9 +41,22 @@ class Analysis:
         self.data['Q72'] = self.data['Q72'].astype('int32')
         self.data['SC0'] = self.data['SC0'].astype('int32')
 
-        print(self.data.loc[:, ['Q59', 'Q62', 'Q64', 'Q65']].corr())
+        # self.data = self.data.replace({'condition': {'data': 0, 'scenario': 1}})
+        #
+        # self.data = self.data.replace({'Q63': {'1': 'White', '2': 'African',
+        #                                         '3': 'Hispanic', '4': 'Asian', '5': 'Others'}})
+        # df_dummies = pd.get_dummies(self.data.Q63.astype('category'))
+        #
+        # self.data = self.data.replace({'Q61': {'female': 'Female', 'male': 'Male'}})
+        # self.data = self.data.replace({'Q61': {'Female': 0, 'Male': 1}})
+        # self.data['Q61'] = self.data['Q61'].astype('int32')
+        # self.data = pd.concat([self.data, df_dummies], axis=1)
+        # print(self.data.loc[:, ['Q59', 'Q61', 'Q62', 'Q64', 'Q65', 'condition',
+        # 'White', 'African', 'Hispanic', 'Asian', 'Others']].corr())
+
         self.data = self.data.rename(columns={"Q50": "Confident in responses", "Q51": "Help understand trade-offs",
-                                              "Q53": "Familiar with the tool quickly", "Q54": "Ease of use", "Q59": "Age",
+                                              "Q53": "Familiar with the tool quickly", "Q54": "Ease of use",
+                                              "Q59": "Age", "Q61": "Gender",
                                               "Q62": "Education level", "Q63": "Race", "SC0": "Score",
                                               "Q64": "Familiarity with judicial system",
                                               "Q65": "Familiarity with AI-powered systems",
@@ -51,30 +64,61 @@ class Analysis:
                                               "Q72": "Reflect value about aggressiveness",
                                               "Duration (in seconds)": "Duration (in minutes)"})
         self.data['Trust change'] = self.data['Q55'] - self.data['Q35']
-
-        # create dummy variables
-        df_dummies = pd.get_dummies(self.data.condition.astype('category'))
-        self.data = pd.concat([self.data, df_dummies], axis=1)
-
-        print(self.data.shape)
         print(self.data.columns.values)
 
-    def run(self):
-        self.data_cleaning()
-        df = self.data
-        # self.correlation_analysis(df)
+        # TODO: convert condition to 0/1
+        # self.data = self.data.replace({'condition': {'data': 0, 'scenario': 1}})
+        # self.data = self.data.rename(columns={'condition': 'isScenario'})
 
-        feature = ['Age', 'Education level',
-                   'Familiarity with judicial system', 'Familiarity with AI-powered systems', 'data', 'scenario']
-        print(df[feature].corr(method='pearson'))
+        # convert gender to 0/1
+        self.data = self.data.replace({'Gender': {'female': 'Female', 'male': 'Male'}})
+        self.data = self.data.replace({'Gender': {'Female': 0, 'Male': 1}})
+        self.data['Gender'] = self.data['Gender'].astype('int32')
 
-        # TODO: add in race and gender
+        # convert race to categorical (dummy)
+        self.data = self.data.replace({'Race': {'1': 'White', '2': 'African',
+                                                '3': 'Hispanic', '4': 'Asian', '5': 'Others'}})
+        df_dummies = pd.get_dummies(self.data.Race.astype('category'))
+        self.data = pd.concat([self.data, df_dummies], axis=1)
+        self.data = self.data.drop(columns='Others')  # for dummy variables
+
+    def analysis_plots(self, df):
+        # DVs = ['Score', 'Confident in responses', 'Help understand trade-offs', 'Trust change',
+        #             'Duration (in minutes)', 'Ease of use', 'Reflect value about aggressiveness',
+        #             'Reflect value about disparity-error']
+        # for dv in DVs:
+        #     # Reflect value about aggressiveness
+        #     df_cond = df[['condition', dv]]
+        #     df_cond = df_cond.groupby(['condition', dv]).size().reset_index(
+        #         name='counts')
+        #     df_cond.pivot(index=dv, columns='condition', values='counts').plot(
+        #         kind='bar')
+        #     plt.legend(loc='best')
+        #     plt.title('{} distribution'.format(dv))
+        #     plt.xticks(rotation=45)
+        #     plt.show()
+
+        IVs = ['Age', 'Education level', 'Familiarity with judicial system', 'Gender',
+                       'Familiarity with AI-powered systems']
+        for iv in IVs:
+            # Reflect value about aggressiveness
+            df_cond = df[['condition', iv]]
+            df_cond = df_cond.groupby(['condition', iv]).size().reset_index(
+                name='counts')
+            df_cond.pivot(index=iv, columns='condition', values='counts').plot(
+                kind='bar')
+            plt.legend(loc='best')
+            plt.title('{} distribution'.format(iv))
+            plt.xticks(rotation=45)
+            plt.show()
+
+    def run_regression(self, df):
         # IVs: age, education, familiarity with judicial system, Your familiarity of the use of AI-powered systems
-        X = df.loc[:, ['Age', 'Education level', 'Familiarity with judicial system',
-                       'Familiarity with AI-powered systems', 'data', 'scenario']]
+        X = df.loc[:, ['Age', 'Education level', 'Familiarity with judicial system', 'Gender',
+                       'Familiarity with AI-powered systems', 'isScenario', 'White', 'African', 'Hispanic', 'Asian']]
 
-        df_data_view = df[df['data'] == 1]
-        df_scenario_view = df[df['scenario'] == 1]
+        df_data_view = df[df['isScenario'] == 0]
+        df_scenario_view = df[df['isScenario'] == 1]
 
         list_DVs = ['Score', 'Confident in responses', 'Help understand trade-offs', 'Trust change',
                     'Duration (in minutes)', 'Ease of use', 'Reflect value about aggressiveness',
@@ -86,9 +130,22 @@ class Analysis:
             est = sm.OLS(y, sm.add_constant(X))
             est2 = est.fit()
             print(est2.summary())
-            t, p = ttest_ind(df_data_view.loc[:, DV].tolist(),
-                             df_scenario_view.loc[:, DV].tolist(), equal_var=False)
-            print('t-test: t: {}, pval: {}'.format(t, p))
+            # t, p = ttest_ind(df_data_view.loc[:, DV].tolist(),
+            #                  df_scenario_view.loc[:, DV].tolist(), equal_var=False)
+            # print('t-test: t: {}, pval: {}'.format(t, p))
+
+    def run(self):
+        self.data_cleaning()
+        df = self.data
+
+        self.analysis_plots(df)
+        # self.run_regression(df)
+        # self.correlation_analysis(df)
+
+        # feature = ['Age', 'Education level', 'Familiarity with judicial system', 'Gender',
+        #            'Familiarity with AI-powered systems', 'condition']
+        # print(df[feature].corr(method='pearson'))
+
 
     def corr_mtx(self, df, dropDuplicates=True):
         # Compute the correlation matrix
@@ -121,7 +178,7 @@ class Analysis:
         # print(df.head(5))
 
         feature = ['Age', 'Education level',
-                   'Familiarity with judicial system', 'Familiarity with AI-powered systems', 'data', 'scenario']
+                   'Familiarity with judicial system', 'Familiarity with AI-powered systems', 'isScenario', 'Gender']
         self.corr_mtx(data[feature], True)
 
 def main():
