@@ -83,34 +83,50 @@ class Analysis:
         self.data = self.data.drop(columns='Others')  # for dummy variables
 
     def analysis_plots(self, df):
-        # DVs = ['Score', 'Confident in responses', 'Help understand trade-offs', 'Trust change',
-        #             'Duration (in minutes)', 'Ease of use', 'Reflect value about aggressiveness',
-        #             'Reflect value about disparity-error']
-        # for dv in DVs:
-        #     # Reflect value about aggressiveness
-        #     df_cond = df[['condition', dv]]
-        #     df_cond = df_cond.groupby(['condition', dv]).size().reset_index(
-        #         name='counts')
-        #     df_cond.pivot(index=dv, columns='condition', values='counts').plot(
-        #         kind='bar')
-        #     plt.legend(loc='best')
-        #     plt.title('{} distribution'.format(dv))
-        #     plt.xticks(rotation=45)
-        #     plt.show()
+        DVs = ['Score', 'Confident in responses', 'Help understand trade-offs', 'Trust change',
+                    'Duration (in minutes)', 'Ease of use', 'Reflect value about aggressiveness',
+                    'Reflect value about disparity-error']
+        for dv in DVs:
+            # Reflect value about aggressiveness
+            df_cond = df[['condition', dv]]
+            df_cond = df_cond.groupby(['condition', dv]).size().reset_index(name='counts')
+            df_cond.pivot(index=dv, columns='condition', values='counts').plot(kind='bar')
+            plt.legend(loc='best')
+            plt.title('{} distribution'.format(dv))
+            plt.xticks(rotation=45)
+            plt.show()
 
         IVs = ['Age', 'Education level', 'Familiarity with judicial system', 'Gender',
                        'Familiarity with AI-powered systems']
         for iv in IVs:
             # Reflect value about aggressiveness
             df_cond = df[['condition', iv]]
-            df_cond = df_cond.groupby(['condition', iv]).size().reset_index(
-                name='counts')
-            df_cond.pivot(index=iv, columns='condition', values='counts').plot(
-                kind='bar')
+            df_cond = df_cond.groupby(['condition', iv]).size().reset_index(name='counts')
+            df_cond.pivot(index=iv, columns='condition', values='counts').plot(kind='bar')
             plt.legend(loc='best')
             plt.title('{} distribution'.format(iv))
             plt.xticks(rotation=45)
             plt.show()
+
+    def analysis_correct_questions(self, df):
+        # select questions
+        list_questions = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q41', 'Q42', 'Q43', 'Q44', 'Q45', 'Q9', 'Q11']
+        list_answers = ['1', '1', '2', '1', '2', '1', '1', '1', '2', '2', '1', '1']
+
+        print('Question, data, scenario')
+        for idx in range(len(list_questions)):
+            question = list_questions[idx]
+            answer = list_answers[idx]
+
+            df_cond = df[['condition', question]]
+            df_cond = df_cond.groupby(['condition', question]).size().reset_index(name='counts')
+
+            d_data_corr = df_cond.loc[(df_cond['condition'] == 'data') & (df_cond[question] == answer)]
+            d_scen_corr = df_cond.loc[(df_cond['condition'] == 'scenario') & (df_cond[question] == answer)]
+
+            print('{}\t{}\t{}'.format(question, round(d_data_corr['counts'].values[0]/52, 2),
+                                                 round(d_scen_corr['counts'].values[0]/45, 2)))
+
 
     def run_regression(self, df):
         # IVs: age, education, familiarity with judicial system, Your familiarity of the use of AI-powered systems
@@ -138,7 +154,8 @@ class Analysis:
         self.data_cleaning()
         df = self.data
 
-        self.analysis_plots(df)
+        self.analysis_correct_questions(df)
+        # self.analysis_plots(df)
         # self.run_regression(df)
         # self.correlation_analysis(df)
 
