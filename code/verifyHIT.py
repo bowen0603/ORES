@@ -45,7 +45,7 @@ workersToReject = []
 # Retrieve all HITs created by the account
 print(">> Retrieving all HITs")
 response = mturk.list_hits(
-    MaxResults=100
+    MaxResults=300
 )
 all_hits = response['HITs']
 print(">> " + str(len(all_hits)) + " hits retrieved")
@@ -63,7 +63,7 @@ for hit in target_hits:
 
     response = mturk.list_assignments_for_hit(
         HITId=hit['HITId'],
-        MaxResults=100,
+        MaxResults=300,
         AssignmentStatuses=['Submitted'],
         # NextToken=next_token
     )
@@ -74,7 +74,7 @@ for hit in target_hits:
 
         response = mturk.list_assignments_for_hit(
             HITId=hit['HITId'],
-            MaxResults=100,
+            MaxResults=300,
             AssignmentStatuses=['Submitted'],
             NextToken = next_token
         )
@@ -126,10 +126,14 @@ for assignment in all_assignments:
         )
         print(">>>>>>>>Rejected to " + submitted_code)
     else:
-        pass_attention_check = True if submitted_code[-3] == '1' else False
+        pass_attention_check = True if submitted_code[-4] == '1' else False
         if pass_attention_check:
-            # pass attention check, compute bonus
-            score = 30 - int(submitted_code[5:7]) + 6
+            # pass attention check, compute bonus according to the condition
+
+            condition = submitted_code[-2]
+            score = float(re.search('QD(.*)CB', submitted_code).group(1))
+            score = (30 - score) if condition == '0' else (30 - score + 6)
+
             workersWithResume.append(assignment['WorkerId'])
             approval_response = mturk.approve_assignment(
                 AssignmentId=assignment['AssignmentId'],
